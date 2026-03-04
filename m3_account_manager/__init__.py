@@ -1,23 +1,30 @@
-"""M3 Account Manager Module — Twitter Account Lifecycle Management
+"""M3 Account Manager - Multi-account management for marketing operations.
 
-Components:
-    - AccountStateManager: Account state machine (warming/active/cooling/suspended)
-    - RateLimiter: Action rate limiting per account state (MKT-19)
-    - HealthMonitor: Account health tracking and alerting (MKT-19)
+This module provides:
+- AccountPool: Credential management and account lifecycle
+- QueueManager: Priority queue with rate limiting and deduplication  
+- AssignmentEngine: Task assignment with load balancing strategies
 """
 
-from .account_state_manager import AccountStateManager, AccountState, ALLOWED_TRANSITIONS
-from .rate_limiter import RateLimiter, ActionType, RATE_LIMITS
-from .health_monitor import HealthMonitor, HealthEventType, Severity
+from .account_pool import AccountPool, AccountInfo, AccountStatus
+from .queue_manager import QueueManager, Task, TaskPriority, TaskStatus
+from .assignment_engine import AssignmentEngine, AccountLoad, AccountState, AssignmentStrategy
 
 __all__ = [
-    "AccountStateManager",
+    # Account Pool
+    "AccountPool",
+    "AccountInfo",
+    "AccountStatus",
+    # Queue Manager
+    "QueueManager",
+    "Task",
+    "TaskPriority",
+    "TaskStatus",
+    # Assignment Engine
+    "AssignmentEngine",
+    "AccountLoad",
     "AccountState",
-    "ALLOWED_TRANSITIONS",
-    "RateLimiter",
-    "ActionType",
-    "RATE_LIMITS",
-    "HealthMonitor",
-    "HealthEventType",
-    "Severity",
+    "AssignmentStrategy",
 ]
+
+__version__ = "0.1.0"
