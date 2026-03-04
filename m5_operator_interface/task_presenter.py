@@ -69,7 +69,7 @@ def _get_profile(profile_id):
         return {}
     rows = execute_query(
         "SELECT id, username, bio, tier, category, followers_count, "
-        "identified_needs, outreach_context, tech_stack "
+        "identified_needs, tech_stack "
         "FROM twitter_profiles WHERE id = %s", (profile_id,))
     return rows[0] if rows else {}
 

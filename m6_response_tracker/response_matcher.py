@@ -50,36 +50,8 @@ def response_matcher(
     except Exception as e:
         return {"status": "error", "message": f"Database connection failed: {str(e)}"}
     
-    # Ensure conversations table exists
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS conversations (
-            id SERIAL PRIMARY KEY,
-            profile_id INTEGER,
-            profile_twitter_id VARCHAR(64),
-            account_id VARCHAR(64),
-            original_message_id VARCHAR(64),
-            original_message_text TEXT,
-            original_message_type VARCHAR(20),
-            original_sent_at TIMESTAMP,
-            status VARCHAR(20) DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        )
-    """)
+    # conversations table managed by schema.sql
     
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS conversation_messages (
-            id SERIAL PRIMARY KEY,
-            conversation_id INTEGER REFERENCES conversations(id),
-            message_id VARCHAR(64),
-            direction VARCHAR(10),
-            message_type VARCHAR(20),
-            text TEXT,
-            author_id VARCHAR(64),
-            created_at TIMESTAMP DEFAULT NOW()
-        )
-    """)
-    conn.commit()
     
     match_confidence = 0.0
     matched_conversation = None
@@ -88,9 +60,9 @@ def response_matcher(
     # Method 1: Direct conversation_id match (highest confidence)
     if conversation_id:
         cur.execute("""
-            SELECT c.*, p.twitter_handle, p.display_name
+            SELECT c.*, p.username, p.display_name
             FROM conversations c
-            LEFT JOIN profiles p ON c.profile_id = p.id
+            LEFT JOIN twitter_profiles p ON c.profile_id = p.id
             WHERE c.original_message_id = %s
                OR EXISTS (
                    SELECT 1 FROM conversation_messages cm 
@@ -107,15 +79,14 @@ def response_matcher(
     # Method 2: Match by reply structure (in_reply_to_user_id + author)
     if not matched_conversation and in_reply_to_user_id:
         cur.execute("""
-            SELECT c.*, p.twitter_handle, p.display_name
+            SELECT c.*, p.username, p.display_name
             FROM conversations c
-            LEFT JOIN profiles p ON c.profile_id = p.id
-            WHERE c.profile_twitter_id = %s
-              AND c.account_id = %s
-              AND c.status IN ('pending', 'active')
-            ORDER BY c.original_sent_at DESC
+            LEFT JOIN twitter_profiles p ON c.profile_id = p.id
+            WHERE p.twitter_id = %s
+              AND c.state IN ('pending', 'active')
+            ORDER BY c.last_activity_at DESC
             LIMIT 1
-        """, (response_author_id, in_reply_to_user_id))
+        """, (response_author_id,))  # account_id removed, not in schema
         result = cur.fetchone()
         if result:
             matched_conversation = dict(result)
@@ -125,12 +96,12 @@ def response_matcher(
     # Method 3: Match by author Twitter ID (medium confidence)
     if not matched_conversation:
         cur.execute("""
-            SELECT c.*, p.twitter_handle, p.display_name
+            SELECT c.*, p.username, p.display_name
             FROM conversations c
-            LEFT JOIN profiles p ON c.profile_id = p.id
-            WHERE c.profile_twitter_id = %s
-              AND c.status IN ('pending', 'active')
-            ORDER BY c.original_sent_at DESC
+            LEFT JOIN twitter_profiles p ON c.profile_id = p.id
+            WHERE p.twitter_id = %s
+              AND c.state IN ('pending', 'active')
+            ORDER BY c.last_activity_at DESC
             LIMIT 1
         """, (response_author_id,))
         result = cur.fetchone()
@@ -142,8 +113,8 @@ def response_matcher(
     # Method 4: Try to find profile by Twitter ID even without conversation
     if not matched_conversation:
         cur.execute("""
-            SELECT id, twitter_id, twitter_handle, display_name
-            FROM profiles
+            SELECT id, twitter_id, username, display_name
+            FROM twitter_profiles
             WHERE twitter_id = %s
             LIMIT 1
         """, (response_author_id,))
@@ -157,7 +128,7 @@ def response_matcher(
                 "id": None,
                 "profile_id": profile["id"],
                 "profile_twitter_id": response_author_id,
-                "twitter_handle": profile.get("twitter_handle"),
+                "username": profile.get("username"),
                 "display_name": profile.get("display_name"),
                 "is_new_conversation": True
             }
@@ -231,7 +202,7 @@ def response_matcher(
         "conversation_id": matched_conversation.get("id"),
         "profile_id": matched_conversation.get("profile_id"),
         "profile_twitter_id": matched_conversation.get("profile_twitter_id"),
-        "twitter_handle": matched_conversation.get("twitter_handle"),
+        "username": matched_conversation.get("username"),
         "display_name": matched_conversation.get("display_name"),
         "original_message_id": matched_conversation.get("original_message_id"),
         "match_confidence": match_confidence,
