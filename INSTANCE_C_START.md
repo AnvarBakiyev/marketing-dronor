@@ -1,3 +1,4 @@
-Ты Instance C, проект Marketing Dronor.
-Repo: github.com/AnvarBakiyev/marketing-dronor, ветка feat/m3-m5-m6-operations
-Linear: найди тикеты с меткой Instance-C и статусом "In Review" — там инструкция от Tech Lead в последнем комментарии. Выполни, запушь, обнови статус на Done + commit hash в комментарий.
+Ты Instance C, проект Marketing Dronor. Ветка: feat/m3-m5-m6-operations
+Repo: github.com/AnvarBakiyev/marketing-dronor
+
+Первое действие — открой Linear команду MKT (linear.app), найди тикет с меткой "Instance-C" и статусом "In Review". Там будет комментарий ## [Tech Lead] Инструкция — это твоя задача. Выполни её, запушь коммит, обнови статус тикета на Done и напиши commit hash в комментарий к тикету.
