@@ -315,3 +315,130 @@ CREATE TABLE IF NOT EXISTS operator_sessions (
     tasks_skipped       INTEGER DEFAULT 0
 );
 
+
+-- ============================================================
+-- SCHEMA v002 — Sprint 4: Real Infrastructure
+-- MKT-27 | 2026-03-05
+-- ============================================================
+
+-- AdsPower browser profiles (1 profile = 1 Twitter account)
+CREATE TABLE IF NOT EXISTS adspower_profiles (
+    id                  SERIAL PRIMARY KEY,
+    account_id          INTEGER REFERENCES twitter_accounts(id) ON DELETE SET NULL,
+    serial_number       VARCHAR(50) UNIQUE NOT NULL,   -- AdsPower internal ID
+    adspower_profile_id VARCHAR(100) UNIQUE,           -- returned by Local API on create
+    proxy_host          VARCHAR(200),
+    proxy_port          INTEGER,
+    proxy_user          VARCHAR(100),
+    proxy_pass          VARCHAR(200),
+    proxy_type          VARCHAR(10) DEFAULT 'socks5',  -- socks5/http
+    proxy_country       VARCHAR(5),                    -- US/KZ etc
+    proxy_city          VARCHAR(100),
+    warmup_stage        VARCHAR(20) DEFAULT 'new',     -- new/warming/active/restricted/banned
+    warmup_day          INTEGER DEFAULT 0,             -- days since account acquired
+    acquired_at         TIMESTAMP DEFAULT NOW(),       -- when aged account was purchased
+    last_started_at     TIMESTAMP,
+    last_stopped_at     TIMESTAMP,
+    total_sessions      INTEGER DEFAULT 0,
+    notes               TEXT,
+    created_at          TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT chk_warmup_stage CHECK (warmup_stage IN ('new','warming','active','restricted','banned')),
+    CONSTRAINT chk_proxy_type CHECK (proxy_type IN ('socks5','http'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_adspower_account ON adspower_profiles(account_id);
+CREATE INDEX IF NOT EXISTS idx_adspower_stage ON adspower_profiles(warmup_stage);
+CREATE INDEX IF NOT EXISTS idx_adspower_serial ON adspower_profiles(serial_number);
+
+-- Warmup schedule: daily limits per phase
+-- Auto-populated by warmup_scheduler based on warmup_day
+CREATE TABLE IF NOT EXISTS warmup_schedule (
+    id                  SERIAL PRIMARY KEY,
+    adspower_profile_id INTEGER NOT NULL REFERENCES adspower_profiles(id) ON DELETE CASCADE,
+    schedule_date       DATE NOT NULL DEFAULT CURRENT_DATE,
+    warmup_day          INTEGER NOT NULL,    -- which day of warmup this row covers
+    phase               VARCHAR(20) NOT NULL, -- foundation/ramp/outreach/cruise
+    daily_likes         INTEGER DEFAULT 0,
+    daily_replies       INTEGER DEFAULT 0,
+    daily_follows       INTEGER DEFAULT 0,
+    daily_dms           INTEGER DEFAULT 0,   -- 0 for days 1-14
+    likes_done          INTEGER DEFAULT 0,
+    replies_done        INTEGER DEFAULT 0,
+    follows_done        INTEGER DEFAULT 0,
+    dms_done            INTEGER DEFAULT 0,
+    completed           BOOLEAN DEFAULT FALSE,
+    created_at          TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(adspower_profile_id, schedule_date),
+    CONSTRAINT chk_phase CHECK (phase IN ('foundation','ramp','outreach','cruise'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_warmup_profile ON warmup_schedule(adspower_profile_id);
+CREATE INDEX IF NOT EXISTS idx_warmup_date ON warmup_schedule(schedule_date);
+CREATE INDEX IF NOT EXISTS idx_warmup_completed ON warmup_schedule(completed) WHERE completed = FALSE;
+
+-- Activity log: every browser action recorded here
+CREATE TABLE IF NOT EXISTS activity_log (
+    id                  SERIAL PRIMARY KEY,
+    adspower_profile_id INTEGER NOT NULL REFERENCES adspower_profiles(id),
+    account_id          INTEGER REFERENCES twitter_accounts(id),
+    action_type         VARCHAR(30) NOT NULL,  -- send_dm/like_tweet/follow_user/reply_tweet/retweet/scroll/login
+    target_username     VARCHAR(100),
+    target_tweet_id     VARCHAR(50),
+    target_url          TEXT,
+    status              VARCHAR(20) DEFAULT 'success', -- success/failed/skipped/rate_limited
+    error_message       TEXT,
+    duration_ms         INTEGER,              -- how long action took
+    message_queue_id    INTEGER REFERENCES message_queue(id),  -- for send_dm actions
+    executed_at         TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT chk_action_type CHECK (action_type IN (
+        'send_dm','like_tweet','follow_user','reply_tweet','retweet',
+        'scroll','login','logout','profile_view'
+    )),
+    CONSTRAINT chk_activity_status CHECK (status IN ('success','failed','skipped','rate_limited'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_profile ON activity_log(adspower_profile_id);
+CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(action_type);
+CREATE INDEX IF NOT EXISTS idx_activity_status ON activity_log(status);
+CREATE INDEX IF NOT EXISTS idx_activity_executed_at ON activity_log(executed_at);
+CREATE INDEX IF NOT EXISTS idx_activity_account ON activity_log(account_id);
+
+-- Restrictions & bans tracking
+CREATE TABLE IF NOT EXISTS account_restrictions (
+    id                  SERIAL PRIMARY KEY,
+    adspower_profile_id INTEGER NOT NULL REFERENCES adspower_profiles(id),
+    account_id          INTEGER REFERENCES twitter_accounts(id),
+    restriction_type    VARCHAR(30) NOT NULL,  -- shadowban/dm_limit/rate_limit/captcha/suspension
+    detected_at         TIMESTAMP DEFAULT NOW(),
+    lifted_at           TIMESTAMP,
+    is_active           BOOLEAN DEFAULT TRUE,
+    notes               TEXT,
+
+    CONSTRAINT chk_restriction_type CHECK (restriction_type IN (
+        'shadowban','dm_limit','rate_limit','captcha','suspension'
+    ))
+);
+
+CREATE INDEX IF NOT EXISTS idx_restrictions_profile ON account_restrictions(adspower_profile_id);
+CREATE INDEX IF NOT EXISTS idx_restrictions_active ON account_restrictions(is_active) WHERE is_active = TRUE;
+
+-- TwitterAPI.io call tracking (cost monitoring)
+CREATE TABLE IF NOT EXISTS twitterapi_calls_log (
+    id              SERIAL PRIMARY KEY,
+    endpoint        VARCHAR(200) NOT NULL,
+    provider        VARCHAR(30) DEFAULT 'twitterapi_io',  -- twitterapi_io/bright_data
+    params          JSONB DEFAULT '{}',
+    response_status INTEGER,
+    records_returned INTEGER DEFAULT 0,
+    cost_usd        DECIMAL(10,6) DEFAULT 0,   -- $0.00018 per profile
+    duration_ms     INTEGER,
+    error_message   TEXT,
+    called_at       TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_twitterapi_called_at ON twitterapi_calls_log(called_at);
+CREATE INDEX IF NOT EXISTS idx_twitterapi_provider ON twitterapi_calls_log(provider);
+
