@@ -77,7 +77,7 @@ echo "$PROJECT" > "$STATE/project_dir"
 header "Python-зависимости"
 info "устанавливаем пакеты..."
 $PYTHON -m pip install --upgrade pip --quiet
-$PYTHON -m pip install --quiet psycopg2-binary flask flask-cors anthropic python-dotenv loguru requests aiohttp playwright
+$PYTHON -m pip install --quiet psycopg2-binary flask flask-cors anthropic python-dotenv loguru requests aiohttp playwright pywebview
 info "устанавливаем браузер Playwright..."
 $PYTHON -m playwright install chromium
 ok "все зависимости установлены"
