@@ -257,19 +257,19 @@ def dashboard():
 @app.route('/cc/connections', methods=['GET'])
 def check_connections():
     """Check external service connections."""
-    # Check AdsPower
-    adspower_ok = False
+    # Check GoLogin
+    gologin_ok = False
     try:
         import requests
-        r = requests.get('http://localhost:50325/status', timeout=2)
-        adspower_ok = r.status_code == 200
+        r = requests.get('http://localhost:36912/browser/v2', timeout=2)
+        gologin_ok = r.status_code == 200
     except: pass
     
     # Check Twitter API config
     twitter_ok = bool(os.environ.get('TWITTER_BEARER_TOKEN'))
     
     return jsonify({
-        'adspower': adspower_ok,
+        'gologin': gologin_ok,
         'twitter': twitter_ok
     })
 
@@ -747,29 +747,73 @@ def run_m4_warmup(data):
         return {'success': False, 'error': str(e)}
 
 def run_m5_send(data):
-    """M5: Outreach Sender — send approved messages via AdsPower browser."""
+    """M5: Outreach Sender — send approved messages via GoLogin antidetect browser."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
     try:
         from infra.db import get_connection
-        # Count approved messages in queue
         from psycopg2.extras import RealDictCursor
+        from m5_browser_controller.gologin_browser_controller import GoLoginAPI, browser_controller
+
+        # 1. Check GoLogin is running
+        api = GoLoginAPI()
+        if not api.is_running():
+            return {
+                'success': False,
+                'error': 'GoLogin is not running. Start the GoLogin desktop app on port 36912.'
+            }
+
+        # 2. Count approved messages
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT COUNT(*) as cnt FROM message_queue WHERE status = 'approved'")
-                count = cur.fetchone()['cnt']
-        if count == 0:
+                cur.execute("""
+                    SELECT mq.id, mq.message_text, mq.profile_id,
+                           tp.username AS target_username,
+                           ta.username AS sender_username,
+                           ta.gologin_profile_id
+                    FROM message_queue mq
+                    JOIN twitter_profiles tp ON tp.id = mq.profile_id
+                    JOIN twitter_accounts ta ON ta.id = mq.account_id
+                    WHERE mq.status = 'approved'
+                    LIMIT %s
+                """, (int(data.get('batch_size', 10)),))
+                messages = cur.fetchall()
+
+        if not messages:
             return {'success': True, 'message': 'No approved messages to send.', 'queued': 0}
-        # In production: call browser_controller per message
-        # For now: return queue status (AdsPower must be running)
-        from m5_browser_controller.browser_controller import browser_controller
-        # Verify AdsPower is reachable via health check
-        health = browser_controller(action='close')  # no-op to test import
+
+        sent = 0
+        errors = []
+        for msg in messages:
+            try:
+                result = browser_controller(
+                    action='send_dm',
+                    username=msg['target_username'],
+                    text=msg['message_text'],
+                    profile_id=msg['gologin_profile_id'] or '',
+                )
+                if result['status'] == 'success':
+                    # Mark as sent
+                    with get_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE message_queue SET status='sent', sent_at=NOW() WHERE id=%s",
+                                (msg['id'],)
+                            )
+                        conn.commit()
+                    sent += 1
+                else:
+                    errors.append(f"{msg['target_username']}: {result.get('message')}")
+            except Exception as e:
+                errors.append(f"{msg['target_username']}: {e}")
+
         return {
             'success': True,
-            'message': f'{count} messages ready to send via AdsPower.',
-            'queued': count
+            'message': f'Sent {sent}/{len(messages)} messages via GoLogin.',
+            'sent': sent,
+            'queued': len(messages),
+            'errors': errors
         }
     except Exception as e:
         return {'success': False, 'error': str(e)}
