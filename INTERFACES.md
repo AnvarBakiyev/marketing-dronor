@@ -50,6 +50,124 @@ M3 reads queue. M4 reads classification for message generation.
 
 ---
 
+## M2 → M7: Profile ready for tweet finding
+
+M7 reads from `twitter_profiles` WHERE tier IS NOT NULL.
+
+**Fields M7 depends on:**
+```python
+{
+  "id": int,                      # FK for target_tweets
+  "username": str,                # for Twitter search query
+  "identified_needs": list[dict], # to extract keywords for relevance scoring
+  "category": str,                # for context
+  "topics_of_interest": list[str] # for keyword matching
+}
+```
+
+---
+
+## M7 → M4: Target tweets for outreach
+
+M7 writes to `target_tweets`. M4 reads unused tweets for message generation.
+
+### M7a: tweet_finder (Variant A — own tweets)
+
+**Input:** enriched profiles with identified_needs
+**Output:** user's own tweets that match their pain points
+
+```python
+# Twitter API v2 call
+GET /2/tweets/search/recent
+    ?query=from:{username} {keywords_from_needs}
+    &max_results=10
+    &tweet.fields=created_at,public_metrics
+```
+
+**Filter:** `relevance_score >= 0.6` (computed from keyword match + recency)
+
+**Writes to target_tweets:**
+```python
+{
+  "profile_id": int,
+  "tweet_id": str,
+  "tweet_url": str,             # https://twitter.com/{author}/status/{id}
+  "tweet_text": str,
+  "tweet_author": str,          # same as profile.username
+  "thread_type": "own_tweet",
+  "relevance_score": float,     # 0-1
+  "engagement_score": int,      # likes + replies + retweets
+  "matched_need": str,          # which need this tweet addresses
+  "matched_keywords": list[str],
+  "tweet_created_at": timestamp,
+  "expires_at": timestamp       # tweet_created_at + 7 days
+}
+```
+
+### M7b: thread_finder (Variant B — popular threads)
+
+**Input:** enriched profiles with category + topics_of_interest
+**Output:** popular threads in niche where @mention outreach makes sense
+
+```python
+# Twitter API v2 call
+GET /2/tweets/search/recent
+    ?query={topic_keywords} -is:retweet min_replies:5
+    &max_results=20
+    &tweet.fields=created_at,public_metrics,author_id
+    &expansions=author_id
+```
+
+**Filter:** `engagement_score >= 25` (likes + replies)
+
+**Writes to target_tweets:**
+```python
+{
+  "profile_id": int,            # target profile to mention
+  "tweet_id": str,
+  "tweet_url": str,
+  "tweet_text": str,
+  "tweet_author": str,          # thread author (different from profile!)
+  "thread_type": "mention_thread",
+  "relevance_score": float,     # topic match score
+  "engagement_score": int,
+  "matched_keywords": list[str],
+  "tweet_created_at": timestamp,
+  "expires_at": timestamp       # tweet_created_at + 3 days (threads move fast)
+}
+```
+
+---
+
+## M7 → M4: Target tweet selection
+
+M4 reads from `target_tweets` to decide outreach type.
+
+**Selection query:**
+```sql
+SELECT * FROM target_tweets
+WHERE profile_id = %s
+  AND used_for_outreach = FALSE
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY relevance_score DESC, engagement_score DESC
+LIMIT 1
+```
+
+**Decision logic in M4:**
+```python
+if target_tweet and target_tweet.thread_type == 'own_tweet':
+    outreach_type = 'reply'
+    # Generate reply referencing their tweet
+elif target_tweet and target_tweet.thread_type == 'mention_thread':
+    outreach_type = 'mention'
+    # Generate reply to thread with @mention of target
+else:
+    outreach_type = 'dm'
+    # Fallback to direct message (old logic)
+```
+
+---
+
 ## M3 → M4: Account availability
 
 M4 calls `account_state_manager` before generating messages.
@@ -79,7 +197,9 @@ M4 writes to `message_queue`. M5 operator reads from it.
   "account_id": int,           # FK to twitter_accounts
   "message_text": str,         # final generated message
   "message_type": str,         # reply | quote | mention | dm
-  "target_tweet_url": str,     # URL to reply to
+  "outreach_type": str,        # NEW: dm | reply | mention
+  "target_tweet_url": str,     # URL to reply to (required for reply/mention)
+  "target_tweet_id": int,      # NEW: FK to target_tweets
   "priority": str,             # P0 | P1 | P2 | P3 | P4
   "tier": str,
   "category": str,
@@ -88,6 +208,13 @@ M4 writes to `message_queue`. M5 operator reads from it.
   "status": str                # pending | in_review | sent | rejected
 }
 ```
+
+**Priority rules:**
+- P0: Tier S + reply to own tweet
+- P1: Tier S DM or Tier A reply
+- P2: Tier A DM or Tier B reply
+- P3: Tier B/C any
+- P4: Tier D or low relevance
 
 ---
 
@@ -128,6 +255,9 @@ DB_CONFIG = {
     "user": "...",
     "password": "..."
 }
+
+# Twitter API (for M7)
+TWITTER_BEARER_TOKEN = "..."  # Twitter API v2 bearer token
 ```
 
 All modules import: `from infra.db import get_connection`
