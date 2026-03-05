@@ -1259,9 +1259,10 @@ kbd {
       Accounts
       <span class="nav-badge" id="nb-accounts">—</span>
     </div>
-    <div class="nav-item">
+    <div class="nav-item" onclick="switchTab('proxies',this)" id="nav-proxies">
       <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 6a5 5 0 1010 0A5 5 0 001 6zm4 6v3h2v-3a7 7 0 01-2 0z"/></svg>
       Proxies
+      <span class="nav-badge" id="nb-proxies">—</span>
     </div>
     <div class="nav-item">
       <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 3v4l3 1-1 1.7L7 9.5V4z"/></svg>
@@ -1443,6 +1444,45 @@ kbd {
       </div>
     </div>
 
+
+    <!-- ── PROXIES TAB ── -->
+    <div class="tab-content" id="tab-proxies">
+      <!-- Toolbar -->
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+        <button class="run-btn" onclick="showProxyImport()">+ IMPORT</button>
+        <button class="run-btn" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="loadProxies()">&#x21BB; REFRESH</button>
+        <button class="run-btn" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="checkAllProxies()">&#x2714; CHECK ALL</button>
+        <div style="flex:1"></div>
+        <span id="proxy-stats" style="font-family:var(--mono);font-size:10px;color:var(--text3)">Loading...</span>
+      </div>
+
+      <!-- Import panel (hidden by default) -->
+      <div id="proxy-import-panel" style="display:none;padding:16px;border-bottom:1px solid var(--border);background:var(--bg2)">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:8px">PASTE PROXIES (one per line, format: user:pass@host:port)</div>
+        <textarea id="proxy-import-text" rows="6"
+          style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px;resize:vertical"
+          placeholder="extellaax:jSwyt3C6sM@208.214.161.225:50100&#10;extellaax:jSwyt3C6sM@208.214.161.225:50101"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="run-btn" onclick="importProxies()">&#x2713; SAVE</button>
+          <button class="run-btn" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="hideProxyImport()">CANCEL</button>
+        </div>
+        <div id="proxy-import-result" style="font-family:var(--mono);font-size:10px;color:var(--accent);margin-top:8px"></div>
+      </div>
+
+      <!-- Table -->
+      <div style="flex:1;overflow-y:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>HOST</th><th>PORT</th><th>PROTOCOL</th>
+              <th>STATUS</th><th>PING</th><th>ASSIGNED TO</th>
+              <th>LAST CHECK</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="proxies-tbody"></tbody>
+        </table>
+      </div>
+    </div>
     <!-- ── ADMIN TAB ── -->
     <div class="tab-content admin-only" id="tab-admin">
       <div style="padding:20px">
@@ -2158,6 +2198,7 @@ function switchTab(tab, el) {
   if (tab === 'analytics')     loadAnalytics();
   if (tab === 'accounts')      loadAccounts();
   if (tab === 'conversations') loadConversations();
+  if (tab === 'proxies')       loadProxies();
 }
 
 // ── DEMO DATA (offline) ──
@@ -2210,6 +2251,110 @@ window.addEventListener('DOMContentLoaded', () => {
   renderDemoData();
   renderDemoQueue();
 });
+
+// ========== PROXIES ==========
+
+function statusDot(s) {
+  const c = {active:'#3fb950', dead:'#f85149', checking:'#d29922'}[s] || '#666';
+  return `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};margin-right:5px"></span>${s}`;
+}
+
+async function loadProxies() {
+  const tbody = document.getElementById('proxies-tbody');
+  const statsEl = document.getElementById('proxy-stats');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text3)">Loading...</td></tr>';
+  try {
+    const r = await fetch('/cc/proxies', {headers: {'X-Auth-Token': token}});
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    const stats = d.stats || {};
+    statsEl.textContent = `TOTAL: ${d.total}  ACTIVE: ${stats.active||0}  DEAD: ${stats.dead||0}  CHECKING: ${stats.checking||0}`;
+    document.getElementById('nb-proxies').textContent = d.total;
+    if (!d.proxies.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text3)">No proxies</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.proxies.map(p => {
+      const lastCheck = p.last_checked ? new Date(p.last_checked).toLocaleString('ru',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+      const ping = p.response_ms ? `${p.response_ms}ms` : '—';
+      const assigned = p.assigned_to_username ? `@${p.assigned_to_username}` : '<span style="color:var(--text3)">free</span>';
+      return `<tr>
+        <td style="color:var(--text3);font-size:10px">${p.id}</td>
+        <td style="font-family:var(--mono)">${p.host}</td>
+        <td style="font-family:var(--mono)">${p.port}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${p.protocol}</td>
+        <td>${statusDot(p.status)}</td>
+        <td style="font-family:var(--mono);font-size:10px">${ping}</td>
+        <td style="font-size:11px">${assigned}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${lastCheck}</td>
+        <td style="white-space:nowrap">
+          <button onclick="checkProxy(${p.id},this)" style="background:none;border:1px solid var(--border2);color:var(--text3);padding:2px 6px;font-size:10px;cursor:pointer;border-radius:3px" title="Test proxy">✔</button>
+          <button onclick="deleteProxy(${p.id},this)" style="background:none;border:1px solid var(--border2);color:#f85149;padding:2px 6px;font-size:10px;cursor:pointer;border-radius:3px;margin-left:3px" title="Delete">×</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="9" style="color:#f85149;padding:20px">${e.message}</td></tr>`;
+  }
+}
+
+function showProxyImport() {
+  document.getElementById('proxy-import-panel').style.display = 'block';
+  document.getElementById('proxy-import-result').textContent = '';
+  document.getElementById('proxy-import-text').focus();
+}
+function hideProxyImport() {
+  document.getElementById('proxy-import-panel').style.display = 'none';
+}
+
+async function importProxies() {
+  const raw = document.getElementById('proxy-import-text').value.trim();
+  const resultEl = document.getElementById('proxy-import-result');
+  if (!raw) { resultEl.textContent = 'Nothing to import'; return; }
+  resultEl.textContent = 'Saving...';
+  try {
+    const r = await fetch('/cc/proxies', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-Auth-Token':token},
+      body: JSON.stringify({proxies: raw})
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    resultEl.textContent = `✓ Added: ${d.added}, skipped (duplicate): ${d.skipped}${d.errors.length ? ', errors: '+d.errors.length : ''}`;
+    document.getElementById('proxy-import-text').value = '';
+    setTimeout(() => { hideProxyImport(); loadProxies(); }, 1500);
+  } catch(e) {
+    resultEl.style.color = '#f85149';
+    resultEl.textContent = e.message;
+  }
+}
+
+async function checkProxy(id, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const r = await fetch(`/cc/proxies/${id}/check`, {method:'POST',headers:{'X-Auth-Token':token}});
+    const d = await r.json();
+    btn.textContent = d.status === 'active' ? '✔' : '✖';
+    setTimeout(() => { btn.disabled=false; btn.textContent='✔'; loadProxies(); }, 1200);
+  } catch(e) { btn.disabled=false; btn.textContent='✔'; }
+}
+
+async function deleteProxy(id, btn) {
+  if (!confirm('Delete this proxy?')) return;
+  btn.disabled = true;
+  try {
+    await fetch(`/cc/proxies/${id}`, {method:'DELETE',headers:{'X-Auth-Token':token}});
+    btn.closest('tr').remove();
+    loadProxies();
+  } catch(e) { btn.disabled=false; }
+}
+
+async function checkAllProxies() {
+  const r = await fetch('/cc/proxies/check-all', {method:'POST',headers:{'X-Auth-Token':token}});
+  const d = await r.json();
+  document.getElementById('proxy-stats').textContent = d.message || 'Checking...';
+}
+
 </script>
 </body>
 </html>

@@ -999,6 +999,153 @@ def log_activity(activity_type: str, message: str):
     finally:
         db.close()
 
+
+# =========== Proxy Management ===========
+
+@app.route('/cc/proxies', methods=['GET'])
+@require_auth
+def get_proxies():
+    """List all proxies with assignment info."""
+    try:
+        from infra.db import get_connection
+        from psycopg2.extras import RealDictCursor
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT p.id, p.host, p.port, p.username, p.protocol,
+                           p.status, p.response_ms, p.last_error,
+                           p.last_checked, p.created_at,
+                           ta.username AS assigned_to_username
+                    FROM proxies p
+                    LEFT JOIN twitter_accounts ta ON ta.id = p.assigned_to
+                    ORDER BY p.status, p.host, p.port
+                """)
+                proxies = cur.fetchall()
+                cur.execute("SELECT status, COUNT(*) as cnt FROM proxies GROUP BY status")
+                stats = {r['status']: r['cnt'] for r in cur.fetchall()}
+        return jsonify({
+            'proxies': [dict(p) for p in proxies],
+            'stats': stats,
+            'total': len(proxies)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/proxies', methods=['POST'])
+@require_auth
+def add_proxies():
+    """Bulk import proxies. Body: {proxies: "user:pass@host:port\n..."}"""
+    data = request.json or {}
+    raw = data.get('proxies', '').strip()
+    if not raw:
+        return jsonify({'error': 'No proxy data provided'}), 400
+    try:
+        from infra.db import get_connection
+        added = 0
+        skipped = 0
+        errors = []
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for line in raw.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        creds, hostport = line.split('@')
+                        user, pwd = creds.split(':', 1)
+                        host, port = hostport.rsplit(':', 1)
+                        cur.execute("""
+                            INSERT INTO proxies (host, port, username, password, protocol, status)
+                            VALUES (%s, %s, %s, %s, 'http', 'active')
+                            ON CONFLICT (host, port) DO UPDATE SET
+                                username=EXCLUDED.username,
+                                password=EXCLUDED.password,
+                                status='active'
+                            RETURNING (xmax = 0) AS inserted
+                        """, (host, int(port), user, pwd))
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            added += 1
+                        else:
+                            skipped += 1
+                    except Exception as e:
+                        errors.append(f'{line}: {e}')
+            conn.commit()
+        return jsonify({'added': added, 'skipped': skipped, 'errors': errors})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/proxies/<int:proxy_id>', methods=['DELETE'])
+@require_auth
+def delete_proxy(proxy_id):
+    """Delete a proxy by ID."""
+    try:
+        from infra.db import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM proxies WHERE id = %s', (proxy_id,))
+            conn.commit()
+        return jsonify({'deleted': proxy_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/proxies/<int:proxy_id>/check', methods=['POST'])
+@require_auth
+def check_proxy(proxy_id):
+    """Test a single proxy — hits httpbin.org/ip through it."""
+    import time, requests as req
+    try:
+        from infra.db import get_connection
+        from psycopg2.extras import RealDictCursor
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT * FROM proxies WHERE id = %s', (proxy_id,))
+                p = cur.fetchone()
+        if not p:
+            return jsonify({'error': 'Not found'}), 404
+        proxy_url = f'{p["protocol"]}://{p["username"]}:{p["password"]}@{p["host"]}:{p["port"]}'
+        proxies = {'http': proxy_url, 'https': proxy_url}
+        t0 = time.time()
+        status = 'dead'
+        error = None
+        ms = None
+        try:
+            r = req.get('https://httpbin.org/ip', proxies=proxies, timeout=10)
+            ms = int((time.time() - t0) * 1000)
+            status = 'active' if r.status_code == 200 else 'dead'
+        except Exception as e:
+            error = str(e)[:200]
+            ms = int((time.time() - t0) * 1000)
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE proxies SET status=%s, response_ms=%s, last_error=%s,
+                    last_checked=NOW() WHERE id=%s
+                """, (status, ms, error, proxy_id))
+            conn.commit()
+        return jsonify({'status': status, 'ms': ms, 'error': error})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/proxies/check-all', methods=['POST'])
+@require_auth
+def check_all_proxies():
+    """Mark all proxies as 'checking' and kick off async test (sync for now)."""
+    try:
+        from infra.db import get_connection
+        from psycopg2.extras import RealDictCursor
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id FROM proxies ORDER BY id')
+                ids = [r['id'] for r in cur.fetchall()]
+        return jsonify({'queued': len(ids), 'message': f'Check {len(ids)} proxies via individual /check calls'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # =========== Main ===========
 
 if __name__ == '__main__':
