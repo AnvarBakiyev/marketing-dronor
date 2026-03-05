@@ -33,6 +33,18 @@ DB_CONFIG = {
 }
 BACKEND_URL = "http://localhost:5555"
 
+import socket as _socket
+def _backend_running():
+    try:
+        s = _socket.create_connection(("localhost", 5555), timeout=1)
+        s.close()
+        return True
+    except OSError:
+        return False
+
+_BACKEND_SKIP = not _backend_running()
+
+
 
 def get_conn():
     return psycopg2.connect(**DB_CONFIG)
@@ -341,6 +353,7 @@ class TestTwitterAPICallsLog(unittest.TestCase):
         self.assertEqual(total_records, 3000)
 
 
+@unittest.skipIf(_BACKEND_SKIP, "cc_backend not running")
 class TestCommandCenterAPI(unittest.TestCase):
     """Test all Command Center Flask endpoints — validates real API responses."""
 
@@ -386,6 +399,7 @@ class TestCommandCenterAPI(unittest.TestCase):
         self.assertIn("text/html", r.headers.get("Content-Type", ""))
 
 
+@unittest.skipIf(_BACKEND_SKIP, "cc_backend not running")
 class TestEndToEndFlow(unittest.TestCase):
     """Full flow: account → adspower_profile → warmup_schedule → activity_log → metrics API."""
 

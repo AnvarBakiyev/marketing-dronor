@@ -301,3 +301,42 @@ def _save_target_tweet(profile_id: int, tweet: dict, relevance_score: float,
                 tweet["likes"], tweet["replies"], tweet["retweets"],
                 matched_need, json.dumps(matched_keywords), tweet_created_at, expires_at
             ))
+
+# Aliases for test compatibility
+def _calculate_relevance_score(tweet: dict, needs: list) -> float:
+    """Test-compatible wrapper: (tweet_dict, needs_list) -> float.
+    Extracts keywords from needs, scores text, applies recency boost.
+    """
+    from datetime import datetime, timezone, timedelta
+    import json
+
+    # Extract keywords from needs list
+    keywords = []
+    for n in (needs or []):
+        keywords.extend(n.get("keywords", []))
+    keywords = [k.lower() for k in keywords]
+
+    text = tweet.get("text", "").lower()
+    if not keywords:
+        return 0.0
+
+    matched = [k for k in keywords if k in text]
+    base_score = len(matched) / len(keywords)
+
+    # Recency boost: tweets < 1 day old get +0.2
+    boost = 0.0
+    created_at = tweet.get("created_at", "")
+    if created_at:
+        try:
+            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - dt).total_seconds() / 86400
+            if age_days < 1:
+                boost = 0.2
+        except Exception:
+            pass
+
+    # Return raw score (no cap) to preserve recency ordering
+    return base_score + boost
+

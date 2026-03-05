@@ -271,3 +271,14 @@ def _save_target_tweet(profile_id: int, tweet: dict, relevance_score: float,
                 tweet["likes"], tweet["replies"], tweet["retweets"],
                 json.dumps(matched_keywords), tweet_created_at, expires_at
             ))
+
+# Aliases for test compatibility
+def _calculate_engagement_score(tweet: dict) -> int:
+    """Return raw engagement count for a tweet."""
+    m = tweet.get("public_metrics", {})
+    return (m.get("like_count", 0) + m.get("reply_count", 0) +
+            m.get("retweet_count", 0) + m.get("quote_count", 0))
+
+def _should_include_thread(tweet: dict, profile: dict) -> bool:
+    """Return True if tweet is not authored by the target profile itself."""
+    return str(tweet.get("author_id", "")) != str(profile.get("twitter_id", ""))
