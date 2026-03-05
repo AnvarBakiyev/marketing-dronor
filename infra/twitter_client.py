@@ -216,3 +216,32 @@ def get_twitter_client() -> TwitterClient:
     if _client is None:
         _client = TwitterClient()
     return _client
+
+
+def get_twitter_client():
+    """
+    Factory: returns TwitterAPIioClient if TWITTERAPI_IO_KEY set,
+    otherwise falls back to native TwitterClient (requires TWITTER_BEARER_TOKEN).
+    This allows zero-change migration for all M1 modules.
+    """
+    global _client
+    if _client is not None:
+        return _client
+
+    try:
+        from infra.config import TWITTERAPI_IO_KEY
+        key = TWITTERAPI_IO_KEY
+    except (ImportError, AttributeError):
+        key = None
+
+    if key:
+        from infra.twitterapi_io_client import get_twitterapi_io_client
+        _client = get_twitterapi_io_client(key)
+    elif TWITTER_BEARER_TOKEN:
+        _client = TwitterClient()
+    else:
+        # No credentials → mock for development
+        from infra.twitterapi_io_client import MockTwitterClient
+        _client = MockTwitterClient()
+
+    return _client
