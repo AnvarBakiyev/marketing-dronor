@@ -10,15 +10,9 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import openai
+import anthropic as _anthropic
 from infra.db import get_connection, execute_query
-try:
-    from infra.config import OPENAI_API_KEY
-except ImportError:
-    raise RuntimeError("infra/config.py missing OPENAI_API_KEY")
-
 log = logging.getLogger(__name__)
-openai.api_key = OPENAI_API_KEY
 
 # Priority mapping
 PRIORITY_RULES = {
@@ -133,57 +127,45 @@ End with a soft question.
 
 
 def _generate_reply_message(profile: dict, target_tweet: dict) -> str:
-    """Generate reply to user's own tweet."""
-    prompt = f"""Generate a Twitter reply (max 280 chars) to this tweet by @{profile['username']}:
-
-"""Tweet: {target_tweet['tweet_text']}"""
-
-Context:
-- They expressed a need related to: {target_tweet.get('matched_need', 'automation')}
-- Their role: {profile.get('professional_role', 'professional')}
-
-Tone: Helpful, conversational. Acknowledge their point and offer insight/solution.
-DO NOT be salesy. Just be genuinely helpful.
-DO NOT use hashtags.
-"""
-    
-    return _call_openai(prompt)
+    """Generate reply to user reply tweet."""
+    parts = [
+        "Generate a concise Twitter reply (max 280 chars).\n",
+        "Tweet by @" + profile["username"] + ": " + target_tweet["tweet_text"] + "\n",
+        "Pain point: " + str(target_tweet.get("matched_need", "automation")) + "\n",
+        "Role: " + str(profile.get("professional_role", "professional")) + "\n",
+        "Be helpful. No hashtags. No sales pitch. Max 280 chars.",
+    ]
+    return _call_openai("".join(parts))
 
 
 def _generate_mention_message(profile: dict, target_tweet: dict) -> str:
-    """Generate reply to popular thread with @mention."""
-    prompt = f"""Generate a Twitter reply (max 280 chars) to this popular thread:
-
-"""Thread: {target_tweet['tweet_text']}"""
-
-Your task: Add value to the discussion AND naturally mention @{profile['username']} who might find this relevant.
-
-Context about @{profile['username']}:
-- Role: {profile.get('professional_role', 'professional')}
-- Interest: {profile.get('category', 'automation')}
-
-Tone: Valuable contribution first, mention second. Be genuinely helpful to the thread.
-Example pattern: "Great point! [your insight]. cc @{profile['username']} this might interest you"
-DO NOT be salesy or promotional.
-"""
-    
-    return _call_openai(prompt)
+    """Generate reply to popular thread with mention."""
+    parts = [
+        "Generate a Twitter reply (max 280 chars) to this popular thread.\n",
+        "Thread: " + target_tweet["tweet_text"] + "\n",
+        "Naturally mention @" + profile["username"] + "\n",
+        "Role: " + str(profile.get("professional_role", "professional")) + "\n",
+        "Pattern: insight + cc @username. Not salesy. Max 280 chars.",
+    ]
+    return _call_openai("".join(parts))
 
 
 def _call_openai(prompt: str) -> str:
-    """Call OpenAI API for message generation."""
+    """Call Claude API for message generation (MKT-74)."""
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
+        import sys, pathlib as _pl
+        sys.path.insert(0, str(_pl.Path(__file__).parent.parent))
+        from infra.config import ANTHROPIC_API_KEY
+        client = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
             max_tokens=150,
-            temperature=0.8
+            messages=[{"role": "user", "content": prompt}]
         )
-        return response.choices[0].message.content.strip()
+        return response.content[0].text.strip()
     except Exception as e:
-        log.error(f"OpenAI error: {e}")
+        log.error("Claude API error: %s", e)
         return ""
-
 
 # ---------------------------------------------------------------------------
 # Helpers
