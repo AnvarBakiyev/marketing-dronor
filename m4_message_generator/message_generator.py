@@ -1,66 +1,39 @@
 """
-MKT-14: message_generator
-Generates personalised outreach messages via Claude Haiku.
-Consumes enriched profile data (tier, category, needs, tech_stack).
+MKT-46: message_generator (M4)
+Generates personalized outreach messages based on outreach strategy.
+Supports: DM, Reply (to own tweet), Mention (in popular thread)
 """
-import sys, json, logging, re
+import sys, json, logging
 from pathlib import Path
+from datetime import datetime
+from typing import Optional
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import anthropic
+import openai
 from infra.db import get_connection, execute_query
 try:
-    from infra.config import ANTHROPIC_API_KEY
+    from infra.config import OPENAI_API_KEY
 except ImportError:
-    raise RuntimeError("infra/config.py missing")
+    raise RuntimeError("infra/config.py missing OPENAI_API_KEY")
 
 log = logging.getLogger(__name__)
+openai.api_key = OPENAI_API_KEY
 
-# ---------------------------------------------------------------------------
-# Prompt templates per tier
-# ---------------------------------------------------------------------------
-TIER_CONTEXT = {
-    "S": "This is a top-tier influencer (50K+ followers). Be very concise, peer-to-peer tone. No fluff.",
-    "A": "Founder/senior engineer with 5-50K followers. Lead with specific technical value.",
-    "B": "Active practitioner in AI/SaaS/devtools. Show you understand their work.",
-    "C": "Engaged community member. Friendly, curious tone. Invite a conversation.",
-    "D": "Low-engagement profile. Keep it minimal and non-intrusive.",
+# Priority mapping
+PRIORITY_RULES = {
+    ('S', 'reply'): 'P0',
+    ('S', 'dm'): 'P1',
+    ('A', 'reply'): 'P1',
+    ('S', 'mention'): 'P1',
+    ('A', 'dm'): 'P2',
+    ('A', 'mention'): 'P2',
+    ('B', 'reply'): 'P2',
+    ('B', 'dm'): 'P3',
+    ('B', 'mention'): 'P3',
+    ('C', 'dm'): 'P3',
+    ('C', 'mention'): 'P3',
 }
-
-CATEGORY_ANGLE = {
-    "automation_builder":  "Dronor lets you build modular automation pipelines with experts that compose like Lego.",
-    "ai_researcher":       "Dronor is an open platform to deploy and chain your own AI experts with full control.",
-    "solopreneur":         "Dronor acts as your personal AI partner — handles workflows so you focus on building.",
-    "dev_productivity":    "Dronor turns repetitive dev tasks into experts you run once and reuse forever.",
-    "content_creator":     "Dronor automates your content pipeline — research, drafting, scheduling, all modular.",
-    "data_analyst":        "Dronor chains data-fetching and analysis experts into reproducible pipelines.",
-    "startup_founder":     "Dronor gives your startup an autonomous AI layer without a dedicated ops team.",
-    "enterprise_ops":      "Dronor standardises complex workflows into auditable, reusable expert pipelines.",
-    "other":               "Dronor is a Personal AGI platform — modular, composable, open-source.",
-}
-
-SYSTEM_PROMPT = """You write short, genuine Twitter DMs for Dronor outreach.
-Rules:
-- Max 3 sentences. Never exceed 280 characters.
-- No emojis unless the profile uses them heavily.
-- No generic AI hype. Be specific to the person.
-- End with a single soft CTA: either a question or a link offer.
-- Never mention "AI automation" generically — use the person's actual context.
-- Sound like a real founder reaching out, not a marketing bot."""
-
-USER_PROMPT = """Write a Twitter DM for this profile:
-
-Username: @{username}
-Bio: {bio}
-Tier: {tier} — {tier_context}
-Category: {category} — {category_angle}
-Pain points: {needs}
-Tech stack: {tech_stack}
-Recent tweet themes: {topics}
-
-Generate 2 variants (A and B) with different angles. Return JSON only:
-{{"variant_a": "...", "variant_b": "..."}}"""
-
 
 # ---------------------------------------------------------------------------
 # Public function
@@ -68,153 +41,259 @@ Generate 2 variants (A and B) with different angles. Return JSON only:
 def message_generator(
     profile_id: int = 0,
     batch_size: int = 20,
-    tier_filter: str = "",       # e.g. "A" or "B" — empty = all tiers
-    dry_run: bool = False        # True = return messages without saving
+    tier_filter: str = "",
+    dry_run: bool = False
 ) -> dict:
     """
-    Generate personalised outreach messages for enriched profiles.
-    Saves results to message_queue table.
-
-    Returns: {status, processed, generated, skipped, errors, tokens_used}
+    Generate outreach messages for profiles.
+    
+    Strategy selection:
+    1. Check target_tweets for unused reply/mention opportunities
+    2. If target_tweet exists: generate reply/mention message
+    3. Else: generate DM (fallback)
+    
+    Returns: {status, processed, generated, dm, reply, mention, errors}
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     profiles = _get_profiles(profile_id, batch_size, tier_filter)
     if not profiles:
         return {"status": "success", "processed": 0, "generated": 0,
-                "skipped": 0, "errors": 0, "tokens_used": 0}
-
-    processed = generated = skipped = errors = 0
-    tokens_used = 0
-
+                "dm": 0, "reply": 0, "mention": 0, "errors": 0}
+    
+    stats = {"processed": 0, "generated": 0, "dm": 0, "reply": 0, "mention": 0, "errors": 0}
+    
     for p in profiles:
-        processed += 1
+        stats["processed"] += 1
         try:
-            if not p.get("tier") or not p.get("category"):
-                log.info(f"Skipping @{p['username']}: not enriched")
-                skipped += 1
+            # Find best outreach strategy
+            target_tweet = _get_best_target_tweet(p["id"])
+            
+            if target_tweet and target_tweet["thread_type"] == "own_tweet":
+                outreach_type = "reply"
+                message = _generate_reply_message(p, target_tweet)
+            elif target_tweet and target_tweet["thread_type"] == "mention_thread":
+                outreach_type = "mention"
+                message = _generate_mention_message(p, target_tweet)
+            else:
+                outreach_type = "dm"
+                target_tweet = None
+                message = _generate_dm_message(p)
+            
+            if not message:
+                log.warning(f"Empty message for @{p['username']}")
+                stats["errors"] += 1
                 continue
-
-            prompt = USER_PROMPT.format(
-                username=p["username"],
-                bio=(p.get("bio") or "")[:300],
-                tier=p["tier"],
-                tier_context=TIER_CONTEXT.get(p["tier"], ""),
-                category=p["category"],
-                category_angle=CATEGORY_ANGLE.get(p["category"], CATEGORY_ANGLE["other"]),
-                needs=_fmt_needs(p.get("identified_needs")),
-                tech_stack=_fmt_list(p.get("tech_stack")),
-                topics=_fmt_list(p.get("topics_of_interest")),
-            )
-
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=300,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            tokens_used += response.usage.input_tokens + response.usage.output_tokens
-            raw = response.content[0].text.strip()
-
-            variants = _parse_variants(raw)
-            if not variants:
-                log.warning(f"Bad JSON for @{p['username']}: {raw[:80]}")
-                errors += 1
-                continue
-
+            
+            priority = _calculate_priority(p["tier"], outreach_type)
+            
             if not dry_run:
-                _save_to_queue(p["id"], variants)
-
-            generated += 1
-            log.info(f"Generated for @{p['username']} (tier={p['tier']})")
-
-        except anthropic.RateLimitError:
-            log.warning("Rate limit — stopping batch")
-            errors += 1
-            break
+                queue_id = _save_to_queue(
+                    profile=p,
+                    message=message,
+                    outreach_type=outreach_type,
+                    target_tweet=target_tweet,
+                    priority=priority
+                )
+                
+                if target_tweet:
+                    _mark_tweet_used(target_tweet["id"], queue_id)
+            
+            stats["generated"] += 1
+            stats[outreach_type] += 1
+            
+            log.info(f"@{p['username']}: {outreach_type} message (priority {priority})")
+            
         except Exception as e:
             log.error(f"Error for @{p.get('username')}: {e}")
-            errors += 1
+            stats["errors"] += 1
+    
+    return {"status": "success", **stats}
 
-    return {
-        "status": "success",
-        "processed": processed,
-        "generated": generated,
-        "skipped": skipped,
-        "errors": errors,
-        "tokens_used": tokens_used,
-    }
+
+# ---------------------------------------------------------------------------
+# Message generation
+# ---------------------------------------------------------------------------
+def _generate_dm_message(profile: dict) -> str:
+    """Generate DM message."""
+    needs = _parse_needs(profile.get("identified_needs"))
+    primary_need = needs[0] if needs else "workflow automation"
+    
+    prompt = f"""Generate a short, personalized Twitter DM (max 280 chars) to {profile['username']}.
+
+Context:
+- Role: {profile.get('professional_role', 'professional')}
+- Industry: {profile.get('industry', 'tech')}
+- Identified need: {primary_need}
+
+Tone: Casual, helpful, not salesy. Mention their specific need.
+DO NOT mention Dronor directly — just offer help with their problem.
+End with a soft question.
+"""
+    
+    return _call_openai(prompt)
+
+
+def _generate_reply_message(profile: dict, target_tweet: dict) -> str:
+    """Generate reply to user's own tweet."""
+    prompt = f"""Generate a Twitter reply (max 280 chars) to this tweet by @{profile['username']}:
+
+"""Tweet: {target_tweet['tweet_text']}"""
+
+Context:
+- They expressed a need related to: {target_tweet.get('matched_need', 'automation')}
+- Their role: {profile.get('professional_role', 'professional')}
+
+Tone: Helpful, conversational. Acknowledge their point and offer insight/solution.
+DO NOT be salesy. Just be genuinely helpful.
+DO NOT use hashtags.
+"""
+    
+    return _call_openai(prompt)
+
+
+def _generate_mention_message(profile: dict, target_tweet: dict) -> str:
+    """Generate reply to popular thread with @mention."""
+    prompt = f"""Generate a Twitter reply (max 280 chars) to this popular thread:
+
+"""Thread: {target_tweet['tweet_text']}"""
+
+Your task: Add value to the discussion AND naturally mention @{profile['username']} who might find this relevant.
+
+Context about @{profile['username']}:
+- Role: {profile.get('professional_role', 'professional')}
+- Interest: {profile.get('category', 'automation')}
+
+Tone: Valuable contribution first, mention second. Be genuinely helpful to the thread.
+Example pattern: "Great point! [your insight]. cc @{profile['username']} this might interest you"
+DO NOT be salesy or promotional.
+"""
+    
+    return _call_openai(prompt)
+
+
+def _call_openai(prompt: str) -> str:
+    """Call OpenAI API for message generation."""
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0.8
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        log.error(f"OpenAI error: {e}")
+        return ""
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _get_profiles(profile_id, batch_size, tier_filter):
+def _get_profiles(profile_id: int, batch_size: int, tier_filter: str) -> list[dict]:
+    """Get profiles ready for message generation."""
     if profile_id:
         return execute_query(
             "SELECT * FROM twitter_profiles WHERE id = %s", (profile_id,))
-
-    where = "outreach_status = 'pending' AND professional_role IS NOT NULL AND tier IS NOT NULL"
+    
+    where = """
+        tier IS NOT NULL 
+        AND outreach_status = 'pending'
+        AND NOT EXISTS (
+            SELECT 1 FROM message_queue mq 
+            WHERE mq.profile_id = twitter_profiles.id 
+            AND mq.status IN ('pending', 'in_review')
+        )
+    """
     params = [batch_size]
+    
     if tier_filter:
         where += " AND tier = %s"
         params.insert(0, tier_filter)
-        return execute_query(
-            f"SELECT * FROM twitter_profiles WHERE {where} ORDER BY followers_count DESC LIMIT %s",
-            tuple(params))
+    
+    return execute_query(f"""
+        SELECT * FROM twitter_profiles 
+        WHERE {where}
+        ORDER BY 
+            CASE tier WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 ELSE 4 END,
+            followers_count DESC
+        LIMIT %s
+    """, tuple(params))
 
-    return execute_query(
-        f"SELECT * FROM twitter_profiles WHERE {where} ORDER BY "
-        "CASE tier WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 WHEN 'C' THEN 4 ELSE 5 END, "
-        "followers_count DESC LIMIT %s",
-        (batch_size,))
+
+def _get_best_target_tweet(profile_id: int) -> Optional[dict]:
+    """Get best available target tweet for outreach."""
+    result = execute_query("""
+        SELECT * FROM target_tweets
+        WHERE profile_id = %s
+          AND used_for_outreach = FALSE
+          AND (expires_at IS NULL OR expires_at > NOW())
+        ORDER BY 
+            CASE thread_type WHEN 'own_tweet' THEN 1 ELSE 2 END,
+            relevance_score DESC,
+            engagement_score DESC
+        LIMIT 1
+    """, (profile_id,))
+    
+    return result[0] if result else None
 
 
-def _fmt_needs(needs_json) -> str:
+def _parse_needs(needs_json) -> list[str]:
+    """Extract needs from JSON."""
     if not needs_json:
-        return "not identified"
+        return []
     try:
         needs = json.loads(needs_json) if isinstance(needs_json, str) else needs_json
-        return "; ".join(n.get("need", "") for n in needs[:3] if n.get("need"))
+        return [n.get("need", "") for n in needs if n.get("need")]
     except Exception:
-        return str(needs_json)[:100]
+        return []
 
 
-def _fmt_list(val) -> str:
-    if not val:
-        return "none"
-    try:
-        lst = json.loads(val) if isinstance(val, str) else val
-        return ", ".join(lst[:5]) if lst else "none"
-    except Exception:
-        return str(val)[:80]
+def _calculate_priority(tier: str, outreach_type: str) -> str:
+    """Calculate message priority."""
+    return PRIORITY_RULES.get((tier, outreach_type), 'P4')
 
 
-def _parse_variants(raw: str) -> dict | None:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-    return None
-
-
-def _save_to_queue(profile_id: int, variants: dict) -> None:
+def _save_to_queue(profile: dict, message: str, outreach_type: str,
+                   target_tweet: Optional[dict], priority: str) -> int:
+    """Save message to queue."""
+    needs = _parse_needs(profile.get("identified_needs"))
+    message_type = 'reply' if outreach_type in ['reply', 'mention'] else 'dm'
+    
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for variant_key in ("variant_a", "variant_b"):
-                msg = variants.get(variant_key, "")
-                if not msg:
-                    continue
-                cur.execute("""
-                    INSERT INTO message_queue
-                        (profile_id, message_text, ab_variant, message_type, account_id, status)
-                    VALUES (%s, %s, %s, 'dm',
-                        (SELECT id FROM twitter_accounts WHERE state='active' ORDER BY total_sent ASC LIMIT 1),
-                        'pending')
-                    ON CONFLICT DO NOTHING
-                """, (profile_id, msg, variant_key[-1].upper()))
+            cur.execute("""
+                INSERT INTO message_queue (
+                    profile_id, account_id, message_text, message_type,
+                    outreach_type, target_tweet_url, target_tweet_id,
+                    priority, tier, category, identified_need, status
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s, 'pending'
+                ) RETURNING id
+            """, (
+                profile["id"],
+                profile.get("assigned_expert_account"),
+                message,
+                message_type,
+                outreach_type,
+                target_tweet["tweet_url"] if target_tweet else None,
+                target_tweet["id"] if target_tweet else None,
+                priority,
+                profile.get("tier"),
+                profile.get("category"),
+                needs[0] if needs else None
+            ))
+            return cur.fetchone()[0]
+
+
+def _mark_tweet_used(tweet_id: int, queue_id: int) -> None:
+    """Mark target tweet as used."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE target_tweets 
+                SET used_for_outreach = TRUE, 
+                    used_at = NOW(),
+                    message_queue_id = %s
+                WHERE id = %s
+            """, (queue_id, tweet_id))
