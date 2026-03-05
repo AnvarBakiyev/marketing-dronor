@@ -213,6 +213,8 @@ def _save_to_queue(profile_id: int, variants: dict) -> None:
                 cur.execute("""
                     INSERT INTO message_queue
                         (profile_id, message_text, ab_variant, message_type, account_id, status)
-                    VALUES (%s, %s, %s, 'reply', (SELECT id FROM twitter_accounts WHERE state='active' LIMIT 1), 'pending')
+                    VALUES (%s, %s, %s, 'dm',
+                        (SELECT id FROM twitter_accounts WHERE state='active' ORDER BY total_sent ASC LIMIT 1),
+                        'pending')
                     ON CONFLICT DO NOTHING
                 """, (profile_id, msg, variant_key[-1].upper()))
