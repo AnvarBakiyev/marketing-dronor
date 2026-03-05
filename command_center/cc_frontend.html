@@ -1,167 +1,1449 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Marketing Dronor — Command Center</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&family=Syne:wght@400;800&display=swap');
-:root{--bg:#080c10;--surface:#0d1117;--border:#1a2332;--accent:#00d4ff;--green:#00ff88;--orange:#ff6b35;--warn:#ffb800;--danger:#ff3860;--text:#e2e8f0;--muted:#4a5568;--muted2:#718096}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:"JetBrains Mono",monospace;background:var(--bg);color:var(--text);font-size:13px}
-body::before{content:"";position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,.015) 2px,rgba(0,212,255,.015) 4px);pointer-events:none;z-index:1000}
-.header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:rgba(13,17,23,.95);position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
-.logo{font-family:"Syne",sans-serif;font-size:15px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:10px}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
-.hright{display:flex;align-items:center;gap:12px}
-.sbadge{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted2);padding:4px 10px;border:1px solid var(--border);border-radius:4px}
-.sdot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
-.sdot.off{background:var(--muted);box-shadow:none;animation:none}
-.btn{padding:6px 14px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;font-family:inherit;font-size:11px;transition:all .15s}
-.btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,.05)}
-.btn.d:hover{border-color:var(--danger);color:var(--danger);background:rgba(255,56,96,.05)}
-.main{padding:20px 24px;display:flex;flex-direction:column;gap:20px}
-.mstrip{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
-.mc{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 16px;position:relative;overflow:hidden}
-.mc::before{content:"";position:absolute;top:0;left:0;right:0;height:2px}
-.mc.b::before{background:linear-gradient(90deg,var(--accent),transparent)}
-.mc.g::before{background:linear-gradient(90deg,var(--green),transparent)}
-.mc.o::before{background:linear-gradient(90deg,var(--orange),transparent)}
-.mc.y::before{background:linear-gradient(90deg,var(--warn),transparent)}
-.ml{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
-.mv{font-family:"Syne",sans-serif;font-size:26px;font-weight:800;line-height:1}
-.mv.b{color:var(--accent)}.mv.g{color:var(--green)}.mv.o{color:var(--orange)}.mv.y{color:var(--warn)}
-.ms{font-size:10px;color:var(--muted);margin-top:4px}
-.cgrid{display:grid;grid-template-columns:1fr 340px;gap:20px}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden}
-.ph{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:rgba(26,35,50,.5)}
-.pt{font-family:"Syne",sans-serif;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
-.tw{overflow-x:auto}
-table{width:100%;border-collapse:collapse}
-th{padding:9px 14px;text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
-td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:rgba(255,255,255,.02)}
-.nd{padding:32px;text-align:center;color:var(--muted);font-size:12px}
-.tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:3px;font-size:10px;letter-spacing:.05em}
-.tag.active{background:rgba(0,255,136,.1);color:var(--green);border:1px solid rgba(0,255,136,.2)}
-.tag.warming{background:rgba(255,184,0,.1);color:var(--warn);border:1px solid rgba(255,184,0,.2)}
-.tag.new{background:rgba(0,212,255,.1);color:var(--accent);border:1px solid rgba(0,212,255,.2)}
-.tag.banned,.tag.restricted{background:rgba(255,56,96,.1);color:var(--danger);border:1px solid rgba(255,56,96,.2)}
-.tag.paused{background:rgba(100,100,100,.1);color:var(--muted2);border:1px solid rgba(100,100,100,.2)}
-.pbar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;width:80px}
-.pfill{height:100%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:2px;transition:width .4s}
-.sidebar{display:flex;flex-direction:column;gap:16px}
-.qi{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px}
-.qi:last-child{border-bottom:none}
-.qdot{width:6px;height:6px;border-radius:50%;margin-top:4px;flex-shrink:0}
-.qdot.pending{background:var(--warn);box-shadow:0 0 5px var(--warn)}
-.qdot.review{background:var(--accent);box-shadow:0 0 5px var(--accent)}
-.qdot.sent{background:var(--green)}
-.qhandle{color:var(--accent)}
-.qmsg{color:var(--muted2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
-.qtime{font-size:10px;color:var(--muted);margin-top:2px}
-.srow{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border)}
-.srow:last-child{border-bottom:none}
-.sk{color:var(--muted);font-size:11px}
-.sv{font-family:"Syne",sans-serif;font-size:15px;font-weight:600}
-.tr{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--border);font-size:11px}
-.tr:last-child{border-bottom:none}
-.tt{color:var(--muted);width:44px;flex-shrink:0;font-size:10px}
-.te{color:var(--muted2)}
-textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:10px 12px;font-family:inherit;font-size:11px;resize:vertical;min-height:80px;outline:none;transition:border-color .2s}
-textarea:focus{border-color:var(--accent)}
-textarea::placeholder{color:var(--muted)}
-.btnp{padding:7px 16px;border-radius:4px;border:none;font-family:inherit;font-size:11px;cursor:pointer;transition:all .15s}
-.btnp.pri{background:var(--accent);color:var(--bg);font-weight:700}
-.btnp.pri:hover{background:#33dcff;box-shadow:0 0 12px rgba(0,212,255,.3)}
-.btnp.sec{background:transparent;color:var(--muted2);border:1px solid var(--border)}
-.btnp.sec:hover{border-color:var(--border-bright);color:var(--text)}
-.toast{position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 16px;border-radius:4px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:12px;transform:translateY(80px);opacity:0;transition:all .25s cubic-bezier(.34,1.56,.64,1);max-width:320px}
-.toast.show{transform:translateY(0);opacity:1}
-.toast.ok{border-color:var(--green);color:var(--green)}
-.toast.err{border-color:var(--danger);color:var(--danger)}
-.ri{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px}
-.spin{animation:spin 1s linear infinite;display:inline-block}
-@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg: #0a0a0b;
+  --bg2: #111113;
+  --bg3: #18181c;
+  --border: #242428;
+  --border2: #2e2e34;
+  --accent: #e8ff47;
+  --accent2: #b8cc30;
+  --green: #3ddc84;
+  --red: #ff4d4d;
+  --orange: #ff8c42;
+  --blue: #4da6ff;
+  --muted: #52525c;
+  --muted2: #71717a;
+  --text: #e4e4e7;
+  --text2: #a1a1aa;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── LAYOUT ── */
+.shell { display: flex; height: 100vh; }
+
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  position: relative;
+}
+
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0; right: -1px; bottom: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, var(--accent) 30%, var(--accent) 70%, transparent);
+  opacity: .12;
+}
+
+.wordmark {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.wordmark-top {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.wordmark-sub {
+  font-size: 9px;
+  color: var(--muted2);
+  letter-spacing: .06em;
+  margin-top: 2px;
+}
+
+.nav { padding: 10px 0; flex: 1; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  cursor: pointer;
+  color: var(--muted2);
+  font-size: 11px;
+  letter-spacing: .03em;
+  transition: all .12s;
+  border-left: 2px solid transparent;
+  user-select: none;
+}
+.nav-item:hover { color: var(--text2); background: rgba(255,255,255,.03); }
+.nav-item.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(232,255,71,.04);
+}
+.nav-icon { width: 14px; height: 14px; opacity: .7; }
+.nav-item.active .nav-icon { opacity: 1; }
+
+.nav-section {
+  padding: 14px 18px 4px;
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sidebar-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--muted2);
+  margin-bottom: 6px;
+}
+.status-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.status-dot.on { background: var(--green); box-shadow: 0 0 5px var(--green); }
+.status-dot.warn { background: var(--orange); box-shadow: 0 0 5px var(--orange); }
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topbar {
+  height: 44px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--bg2);
+}
+.topbar-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  color: var(--text2);
+}
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+.content::-webkit-scrollbar { width: 4px; }
+.content::-webkit-scrollbar-track { background: transparent; }
+.content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── TABS ── */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── CARDS ── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.kpi {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi-label {
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-bottom: 8px;
+}
+.kpi-value {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+}
+.kpi-value.accent { color: var(--accent); }
+.kpi-value.green { color: var(--green); }
+.kpi-value.orange { color: var(--orange); }
+.kpi-value.red { color: var(--red); }
+.kpi-sub { font-size: 9px; color: var(--muted); margin-top: 5px; }
+.kpi-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--border);
+}
+.kpi-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width .6s ease;
+}
+
+/* ── PANELS ── */
+.panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+.panel-title {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.panel-actions { display: flex; gap: 8px; align-items: center; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3-1 { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--muted2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: all .12s;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--text2); color: var(--text); }
+.btn.primary { border-color: var(--accent); color: var(--accent); background: rgba(232,255,71,.06); }
+.btn.primary:hover { background: rgba(232,255,71,.12); }
+.btn.success { border-color: var(--green); color: var(--green); background: rgba(61,220,132,.06); }
+.btn.success:hover { background: rgba(61,220,132,.12); }
+.btn.danger { border-color: var(--red); color: var(--red); background: rgba(255,77,77,.06); }
+.btn.danger:hover { background: rgba(255,77,77,.12); }
+.btn.sm { padding: 3px 8px; font-size: 9px; }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.running { border-color: var(--orange); color: var(--orange); }
+.btn.running::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--orange); animation: blink 1s infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .2; } }
+
+/* ── TABLE ── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  font-weight: 400;
+}
+td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+  vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.015); }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.tag.active { background: rgba(61,220,132,.12); color: var(--green); border: 1px solid rgba(61,220,132,.2); }
+.tag.warming { background: rgba(255,140,66,.12); color: var(--orange); border: 1px solid rgba(255,140,66,.2); }
+.tag.new { background: rgba(77,166,255,.12); color: var(--blue); border: 1px solid rgba(77,166,255,.2); }
+.tag.banned, .tag.restricted { background: rgba(255,77,77,.12); color: var(--red); border: 1px solid rgba(255,77,77,.2); }
+.tag.pending { background: rgba(161,161,170,.1); color: var(--text2); border: 1px solid var(--border2); }
+.tag.approved { background: rgba(61,220,132,.12); color: var(--green); border: 1px solid rgba(61,220,132,.2); }
+.tag.rejected { background: rgba(255,77,77,.12); color: var(--red); border: 1px solid rgba(255,77,77,.2); }
+.tag.in_review { background: rgba(232,255,71,.1); color: var(--accent); border: 1px solid rgba(232,255,71,.2); }
+.tag.sent { background: rgba(77,166,255,.12); color: var(--blue); border: 1px solid rgba(77,166,255,.2); }
+
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.empty-state .e-icon { font-size: 28px; margin-bottom: 10px; opacity: .4; }
+.empty-state .e-msg { color: var(--muted2); margin-bottom: 6px; }
+
+/* ── FORMS ── */
+.form-group { margin-bottom: 16px; }
+.form-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-bottom: 6px;
+}
+.form-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  outline: none;
+  transition: border-color .12s;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--muted); }
+select.form-input { cursor: pointer; }
+textarea.form-input { resize: vertical; min-height: 80px; line-height: 1.5; }
+.form-hint { font-size: 9px; color: var(--muted); margin-top: 4px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* ── PIPELINE CONTROLS ── */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.module-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px;
+}
+.module-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.module-name {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.module-desc { font-size: 10px; color: var(--muted2); line-height: 1.5; }
+.module-output {
+  margin-top: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 10px;
+  font-size: 10px;
+  color: var(--green);
+  max-height: 80px;
+  overflow-y: auto;
+  display: none;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.module-output.show { display: block; }
+.module-output.err { color: var(--red); }
+
+/* ── SETTINGS ── */
+.settings-section { margin-bottom: 28px; }
+.settings-section-title {
+  font-size: 9px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.conn-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.conn-left { display: flex; align-items: center; gap: 12px; }
+.conn-icon {
+  width: 32px; height: 32px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.conn-name { font-size: 11px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+.conn-detail { font-size: 10px; color: var(--muted2); }
+.conn-status { display: flex; align-items: center; gap: 8px; }
+
+/* ── TOAST ── */
+.toasts { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: slideIn .2s ease;
+  min-width: 220px;
+}
+.toast.ok { border-color: var(--green); color: var(--green); }
+.toast.err { border-color: var(--red); color: var(--red); }
+@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  width: 480px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 11px; font-weight: 500; letter-spacing: .06em; color: var(--text); }
+.modal-close {
+  background: none; border: none; color: var(--muted2); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px 6px;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 18px; overflow-y: auto; }
+.modal-foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── QUEUE CARD ── */
+.q-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+  margin-bottom: 10px;
+  background: var(--bg3);
+  position: relative;
+}
+.q-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.q-target { font-size: 11px; font-weight: 500; color: var(--text); }
+.q-text {
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.6;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.q-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.q-meta { font-size: 9px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* ── PROGRESS BAR ── */
+.wb-bar { background: var(--bg); border-radius: 2px; height: 4px; overflow: hidden; width: 80px; }
+.wb-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s; }
+
+/* ── MISC ── */
+.refresh-ticker {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .06em;
+}
+.spinner {
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.badge-num {
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 8px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+code {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 2px;
+  color: var(--accent);
+}
 </style>
 </head>
 <body>
-<header class="header">
-  <div class="logo"><div class="dot"></div>Marketing Dronor<span style="color:var(--muted);font-weight:400;font-size:11px">// command center</span></div>
-  <div class="hright">
-    <div class="sbadge" id="ads-st"><div class="sdot off"></div><span>AdsPower</span></div>
-    <div class="ri"><span id="ri-icon">↻</span><span id="ri-text">—</span></div>
-    <button class="btn" onclick="resumeAll()">▶ Resume All</button>
-    <button class="btn d" onclick="pauseAll()">⏸ Pause All</button>
-  </div>
-</header>
-<div class="main">
-  <div class="mstrip">
-    <div class="mc b"><div class="ml">DMs Today</div><div class="mv b" id="m1">—</div><div class="ms" id="m1s">...</div></div>
-    <div class="mc g"><div class="ml">Active Accts</div><div class="mv g" id="m2">—</div><div class="ms" id="m2s">of — total</div></div>
-    <div class="mc y"><div class="ml">Warming Up</div><div class="mv y" id="m3">—</div><div class="ms" id="m3s">— new</div></div>
-    <div class="mc o"><div class="ml">Queue</div><div class="mv o" id="m4">—</div><div class="ms" id="m4s">— in review</div></div>
-    <div class="mc b"><div class="ml">Responses</div><div class="mv b" id="m5">—</div><div class="ms">today</div></div>
-    <div class="mc g"><div class="ml">API Cost</div><div class="mv g" id="m6" style="font-size:20px">—</div><div class="ms">today, USD</div></div>
-  </div>
-  <div class="cgrid">
-    <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="panel">
-        <div class="ph"><span class="pt">Twitter Accounts</span><span id="acct-cnt" style="font-size:11px;color:var(--muted)">loading...</span></div>
-        <div class="tw"><table><thead><tr><th>Handle</th><th>Status</th><th>Day</th><th>DMs/day</th><th>Warmup</th><th>Proxy</th></tr></thead><tbody id="atbody"><tr><td colspan="6" class="nd">Loading...</td></tr></tbody></table></div>
+
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="wordmark">
+      <div class="wordmark-top">Marketing Dronor</div>
+      <div class="wordmark-sub">Command Center v0.3</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" onclick="switchTab('dashboard', this)">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="1" y="1" width="5" height="5" rx=".5"/><rect x="8" y="1" width="5" height="5" rx=".5"/>
+          <rect x="1" y="8" width="5" height="5" rx=".5"/><rect x="8" y="8" width="5" height="5" rx=".5"/>
+        </svg>
+        Dashboard
       </div>
-      <div class="panel">
-        <div class="ph"><span class="pt">Bulk Import Accounts</span></div>
-        <div style="padding:12px 14px">
-          <div style="margin-bottom:8px;color:var(--muted);font-size:11px">CSV: <span style="color:var(--accent)">username, proxy_host:port:user:pass, adspower_profile_id</span></div>
-          <textarea id="csv" placeholder="account1, proxy1:8080:user:pass, profile_id_1&#10;account2, proxy2:8080:user:pass, profile_id_2"></textarea>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btnp pri" onclick="bulkImport()">Import</button>
-            <button class="btnp sec" onclick="document.getElementById(&#39;csv&#39;).value=&#39;&#39;">Clear</button>
+      <div class="nav-item" onclick="switchTab('accounts', this)">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4">
+          <circle cx="5" cy="4.5" r="2.5"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/>
+          <circle cx="11" cy="4.5" r="1.5"/><path d="M13 11c0-1.3-.9-2.5-2-2.5"/>
+        </svg>
+        Accounts
+        <span class="badge-num" id="badge-accounts">0</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('queue', this)">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M2 4h10M2 7h10M2 10h6"/>
+        </svg>
+        DM Queue
+        <span class="badge-num" id="badge-queue">0</span>
+      </div>
+      <div class="nav-section">Pipeline</div>
+      <div class="nav-item" onclick="switchTab('pipeline', this)">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="1" y="1" width="3" height="3" rx=".4"/>
+          <rect x="5.5" y="5.5" width="3" height="3" rx=".4"/>
+          <rect x="10" y="10" width="3" height="3" rx=".4"/>
+          <path d="M4 2.5h3l3 4.5h3"/>
+        </svg>
+        Run Modules
+      </div>
+      <div class="nav-section">System</div>
+      <div class="nav-item" onclick="switchTab('settings', this)">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4">
+          <circle cx="7" cy="7" r="2.5"/>
+          <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M11.4 2.6l-1.1 1.1M3.7 10.3l-1.1 1.1"/>
+        </svg>
+        Settings
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="status-row">
+        <div class="status-dot on" id="sd-db"></div>
+        <span>PostgreSQL</span>
+      </div>
+      <div class="status-row">
+        <div class="status-dot" id="sd-adspower"></div>
+        <span>AdsPower</span>
+      </div>
+      <div class="status-row">
+        <div class="status-dot" id="sd-twitter"></div>
+        <span>Twitter API</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title" id="page-title">Dashboard</span>
+      <div class="topbar-right">
+        <span class="refresh-ticker" id="refresh-ticker">—</span>
+        <button class="btn sm" onclick="refreshAll()">↺ Refresh</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ═══ DASHBOARD ═══ -->
+      <div class="tab-content active" id="tab-dashboard">
+        <div class="kpi-row" id="kpi-row">
+          <div class="kpi">
+            <div class="kpi-label">DMs Today</div>
+            <div class="kpi-value accent" id="k-dms">—</div>
+            <div class="kpi-sub" id="k-dms-sub">sent</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" id="k-dms-bar" style="width:0%"></div></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Active Accts</div>
+            <div class="kpi-value green" id="k-active">—</div>
+            <div class="kpi-sub" id="k-active-sub">of <span id="k-total">0</span> total</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Warming Up</div>
+            <div class="kpi-value orange" id="k-warming">—</div>
+            <div class="kpi-sub">accounts in warmup</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Pending Queue</div>
+            <div class="kpi-value" id="k-queue">—</div>
+            <div class="kpi-sub" id="k-review-sub">in_review: <span id="k-review">0</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Responses</div>
+            <div class="kpi-value green" id="k-resp">—</div>
+            <div class="kpi-sub">today</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">API Cost</div>
+            <div class="kpi-value" id="k-cost">—</div>
+            <div class="kpi-sub">USD today</div>
+          </div>
+        </div>
+
+        <div class="grid-3-1">
+          <div>
+            <div class="panel">
+              <div class="panel-head">
+                <span class="panel-title">Profiles Pipeline</span>
+              </div>
+              <div class="kpi-row" style="padding:14px;margin-bottom:0;">
+                <div class="kpi">
+                  <div class="kpi-label">Total Profiles</div>
+                  <div class="kpi-value accent" id="p-total">—</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Enriched</div>
+                  <div class="kpi-value green" id="p-enriched">—</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Ready to DM</div>
+                  <div class="kpi-value" id="p-pending">—</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Contacted</div>
+                  <div class="kpi-value" id="p-contacted">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <span class="panel-title">Activity Feed</span>
+                <span class="refresh-ticker" style="font-size:9px" id="tl-age">—</span>
+              </div>
+              <div id="timeline-body" style="max-height:260px;overflow-y:auto;">
+                <div class="empty-state"><div class="e-icon">⏱</div><div class="e-msg">No activity yet</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="panel">
+              <div class="panel-head">
+                <span class="panel-title">Quick Actions</span>
+              </div>
+              <div style="padding:14px;display:flex;flex-direction:column;gap:8px;">
+                <button class="btn primary" style="justify-content:center" onclick="runModule('m4',{batch_size:20})">▶ Generate 20 DMs</button>
+                <button class="btn" style="justify-content:center" onclick="runModule('m1',{})">▶ Collect Profiles</button>
+                <button class="btn" style="justify-content:center" onclick="switchTab('queue',document.querySelector('[onclick*=queue]'))">→ Review Queue</button>
+                <hr class="divider" style="margin:4px 0">
+                <button class="btn danger" style="justify-content:center" id="btn-pause-all" onclick="pauseAll()">⏸ Pause All</button>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-top:0">
+              <div class="panel-head"><span class="panel-title">Today's Stats</span></div>
+              <div style="padding:12px 14px">
+                <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+                  <span style="color:var(--muted2);font-size:10px">DMs sent</span>
+                  <span id="stat-dms" style="color:var(--text);font-size:10px">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+                  <span style="color:var(--muted2);font-size:10px">Likes done</span>
+                  <span id="stat-likes" style="color:var(--text);font-size:10px">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+                  <span style="color:var(--muted2);font-size:10px">Follows done</span>
+                  <span id="stat-follows" style="color:var(--text);font-size:10px">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:6px 0">
+                  <span style="color:var(--muted2);font-size:10px">Errors</span>
+                  <span id="stat-errors" style="color:var(--red);font-size:10px">—</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="panel">
-        <div class="ph"><span class="pt">Activity Timeline</span></div>
-        <div id="tl-body"><div class="nd">No activity yet</div></div>
+
+      <!-- ═══ ACCOUNTS ═══ -->
+      <div class="tab-content" id="tab-accounts">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">Twitter Accounts</span>
+            <div class="panel-actions">
+              <button class="btn sm primary" onclick="openModal('modal-add-account')">+ Add Account</button>
+            </div>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>AdsPower ID</th>
+                  <th>Stage</th>
+                  <th>Day</th>
+                  <th>Warmup Progress</th>
+                  <th>DMs Sent</th>
+                  <th>Health</th>
+                  <th>Proxy</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-tbody">
+                <tr><td colspan="9"><div class="empty-state"><div class="e-icon">👤</div><div class="e-msg">No accounts yet</div><div>Add your first Twitter account to get started</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ QUEUE ═══ -->
+      <div class="tab-content" id="tab-queue">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div style="display:flex;gap:8px" id="queue-filters">
+            <button class="btn sm primary" onclick="loadQueue('pending');setQFilter(this)">Pending</button>
+            <button class="btn sm" onclick="loadQueue('in_review');setQFilter(this)">In Review</button>
+            <button class="btn sm" onclick="loadQueue('approved');setQFilter(this)">Approved</button>
+            <button class="btn sm" onclick="loadQueue('sent');setQFilter(this)">Sent</button>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn sm success" onclick="approveAll()">✓ Approve All In Review</button>
+            <button class="btn sm primary" onclick="runModule('m4',{batch_size:20})">+ Generate 20 more</button>
+          </div>
+        </div>
+        <div id="queue-body">
+          <div class="empty-state"><div class="e-icon">📬</div><div class="e-msg">Queue is empty</div><div>Generate DMs from Dashboard or run M4</div></div>
+        </div>
+      </div>
+
+      <!-- ═══ PIPELINE ═══ -->
+      <div class="tab-content" id="tab-pipeline">
+        <div class="panel" style="margin-bottom:20px">
+          <div class="panel-head"><span class="panel-title">Pipeline Modules</span></div>
+          <div style="padding:14px 16px;font-size:10px;color:var(--muted2);line-height:1.6">
+            Run individual modules. Each module writes results to PostgreSQL. Run order: M1 → M2 → M4 → (operator review) → M5.
+            M3 runs independently on the warmup schedule.
+          </div>
+        </div>
+
+        <div class="module-grid">
+          <div class="module-card">
+            <div class="module-card-head">
+              <div>
+                <div class="module-name">M1 — Data Collector</div>
+                <div class="module-desc" style="margin-top:4px">Searches Twitter for target profiles matching ICP criteria. Requires Twitter Bearer Token.</div>
+              </div>
+              <button class="btn sm primary" id="btn-m1" onclick="runModule('m1',{limit:50})">▶ Run</button>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+              <span style="font-size:9px;color:var(--muted2)">Query:</span>
+              <input id="m1-query" class="form-input" placeholder="AI automation python" style="flex:1;min-width:160px;padding:4px 8px;font-size:10px">
+              <span style="font-size:9px;color:var(--muted2)">Limit:</span>
+              <input id="m1-limit" class="form-input" value="50" style="width:60px;padding:4px 8px;font-size:10px">
+            </div>
+            <div class="module-output" id="out-m1"></div>
+          </div>
+
+          <div class="module-card">
+            <div class="module-card-head">
+              <div>
+                <div class="module-name">M2 — Profile Analyzer</div>
+                <div class="module-desc" style="margin-top:4px">Classifies collected profiles into tiers (S/A/B/C/D) and categories. Uses Claude Haiku.</div>
+              </div>
+              <button class="btn sm primary" id="btn-m2" onclick="runModule('m2',{batch_size:parseInt(document.getElementById('m2-batch').value)||50})">▶ Run</button>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+              <span style="font-size:9px;color:var(--muted2)">Batch:</span>
+              <input id="m2-batch" class="form-input" value="50" style="width:60px;padding:4px 8px;font-size:10px">
+            </div>
+            <div class="module-output" id="out-m2"></div>
+          </div>
+
+          <div class="module-card">
+            <div class="module-card-head">
+              <div>
+                <div class="module-name">M4 — Message Generator</div>
+                <div class="module-desc" style="margin-top:4px">Generates personalised DMs for enriched profiles. Saves to message_queue with status=pending.</div>
+              </div>
+              <button class="btn sm primary" id="btn-m4" onclick="runModule('m4',{batch_size:parseInt(document.getElementById('m4-batch').value)||20,tier_filter:document.getElementById('m4-tier').value})">▶ Run</button>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+              <span style="font-size:9px;color:var(--muted2)">Batch:</span>
+              <input id="m4-batch" class="form-input" value="20" style="width:60px;padding:4px 8px;font-size:10px">
+              <span style="font-size:9px;color:var(--muted2)">Tier:</span>
+              <select id="m4-tier" class="form-input" style="width:80px;padding:4px 8px;font-size:10px">
+                <option value="">All</option>
+                <option>S</option><option>A</option><option>B</option><option>C</option><option>D</option>
+              </select>
+            </div>
+            <div class="module-output" id="out-m4"></div>
+          </div>
+
+          <div class="module-card">
+            <div class="module-card-head">
+              <div>
+                <div class="module-name">M3 — Account Manager</div>
+                <div class="module-desc" style="margin-top:4px">Runs warmup cycle for staged accounts. Performs likes, follows, and replies via AdsPower.</div>
+              </div>
+              <button class="btn sm primary" id="btn-m3" onclick="runModule('m3',{})">▶ Run Cycle</button>
+            </div>
+            <div style="font-size:9px;color:var(--muted2);margin-bottom:8px">Requires AdsPower running at localhost:50325</div>
+            <div class="module-output" id="out-m3"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SETTINGS ═══ -->
+      <div class="tab-content" id="tab-settings">
+        <div class="grid-2">
+          <div>
+            <div class="settings-section">
+              <div class="settings-section-title">API Keys</div>
+              <div class="form-group">
+                <label class="form-label">Anthropic API Key</label>
+                <input class="form-input" type="password" id="s-anthropic" placeholder="sk-ant-api…">
+                <div class="form-hint">Used by M2 (profile analysis) and M4 (message generation)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Twitter Bearer Token</label>
+                <input class="form-input" type="password" id="s-twitter" placeholder="AAAA…">
+                <div class="form-hint">Required for M1 profile collection via Twitter API v2</div>
+              </div>
+              <button class="btn primary" onclick="saveSettings()">Save API Keys</button>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-section-title">Service Connections</div>
+              <div class="conn-card">
+                <div class="conn-left">
+                  <div class="conn-icon">🐘</div>
+                  <div>
+                    <div class="conn-name">PostgreSQL</div>
+                    <div class="conn-detail">marketing_dronor @ localhost:5432</div>
+                  </div>
+                </div>
+                <div class="conn-status">
+                  <div class="status-dot on" id="conn-pg"></div>
+                  <span id="conn-pg-label" style="font-size:10px;color:var(--green)">Connected</span>
+                </div>
+              </div>
+              <div class="conn-card">
+                <div class="conn-left">
+                  <div class="conn-icon">🌐</div>
+                  <div>
+                    <div class="conn-name">AdsPower Local API</div>
+                    <div class="conn-detail">localhost:50325</div>
+                  </div>
+                </div>
+                <div class="conn-status">
+                  <div class="status-dot" id="conn-ads"></div>
+                  <span id="conn-ads-label" style="font-size:10px;color:var(--muted2)">Not detected</span>
+                  <button class="btn sm" onclick="checkSettings()">Check</button>
+                </div>
+              </div>
+              <div class="conn-card">
+                <div class="conn-left">
+                  <div class="conn-icon">🐦</div>
+                  <div>
+                    <div class="conn-name">Twitter API v2</div>
+                    <div class="conn-detail">Bearer Token auth</div>
+                  </div>
+                </div>
+                <div class="conn-status">
+                  <div class="status-dot" id="conn-tw"></div>
+                  <span id="conn-tw-label" style="font-size:10px;color:var(--muted2)">Not configured</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-section">
+              <div class="settings-section-title">Account Import</div>
+              <div class="form-group">
+                <label class="form-label">Bulk Import CSV</label>
+                <textarea class="form-input" id="s-csv" placeholder="username,adspower_profile_id,proxy_host,proxy_port,proxy_user,proxy_pass,proxy_country&#10;account1,abc123,1.2.3.4,50000,user,pass,US"></textarea>
+                <div class="form-hint">One account per line. Header row optional.</div>
+              </div>
+              <button class="btn primary" onclick="bulkImport()">Import Accounts</button>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-section-title">E2E Smoke Test</div>
+              <div style="font-size:10px;color:var(--muted2);margin-bottom:12px;line-height:1.6">
+                Runs the full pipeline smoke test on synthetic data. Validates DB connectivity, M4 generation, and operator workflow. Takes ~15 seconds.
+              </div>
+              <button class="btn" id="btn-smoke" onclick="runSmokeTest()">▶ Run Smoke Test</button>
+              <div class="module-output" id="out-smoke" style="margin-top:10px;max-height:180px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- ── ADD ACCOUNT MODAL ── -->
+<div class="modal-overlay" id="modal-add-account">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Add Twitter Account</span>
+      <button class="modal-close" onclick="closeModal('modal-add-account')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Twitter Username *</label>
+          <input class="form-input" id="f-username" placeholder="@handle (no @)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="form-input" id="f-display" placeholder="Dronor Bot 1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">AdsPower Profile ID *</label>
+          <input class="form-input" id="f-adspower" placeholder="jdxxx1a2b3c">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Serial Number</label>
+          <input class="form-input" id="f-serial" placeholder="123456">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category Focus</label>
+        <select class="form-input" id="f-category">
+          <option value="automation_builder">Automation Builder</option>
+          <option value="ai_researcher">AI Researcher</option>
+          <option value="solopreneur">Solopreneur</option>
+          <option value="dev_productivity">Dev Productivity</option>
+          <option value="startup_founder">Startup Founder</option>
+        </select>
+      </div>
+      <div style="font-size:10px;font-weight:500;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Proxy</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Host</label>
+          <input class="form-input" id="f-phost" placeholder="1.2.3.4">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input class="form-input" id="f-pport" placeholder="50000">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="form-input" id="f-puser" placeholder="proxy_user">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="f-ppass" placeholder="proxy_pass">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Country</label>
+          <input class="form-input" id="f-pcountry" placeholder="US">
+        </div>
+        <div class="form-group">
+          <label class="form-label">City</label>
+          <input class="form-input" id="f-pcity" placeholder="New York">
+        </div>
       </div>
     </div>
-    <div class="sidebar">
-      <div class="panel">
-        <div class="ph"><span class="pt">DM Queue</span><span id="qcnt" style="font-size:10px;color:var(--muted)">—</span></div>
-        <div id="q-body"><div class="nd">Queue empty</div></div>
-      </div>
-      <div class="panel">
-        <div class="ph"><span class="pt">Today Stats</span></div>
-        <div class="srow"><span class="sk">Likes done</span><span class="sv" id="s1">—</span></div>
-        <div class="srow"><span class="sk">Follows done</span><span class="sv" id="s2">—</span></div>
-        <div class="srow"><span class="sk">Errors</span><span class="sv" id="s3" style="color:var(--danger)">—</span></div>
-        <div class="srow"><span class="sk">Sent total</span><span class="sv" id="s4" style="color:var(--green)">—</span></div>
-        <div class="srow"><span class="sk">Restricted</span><span class="sv" id="s5" style="color:var(--warn)">—</span></div>
-      </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal('modal-add-account')">Cancel</button>
+      <button class="btn primary" onclick="addAccount()">Add Account</button>
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+
+<!-- ── TOASTS ── -->
+<div class="toasts" id="toasts"></div>
+
 <script>
-const API="http://localhost:5555";
-function toast(m,t=""){const e=document.getElementById("toast");e.textContent=m;e.className="toast show "+t;clearTimeout(e._t);e._t=setTimeout(()=>e.className="toast",3000)}
-async function api(p,o={}){const r=await fetch(API+p,o);if(!r.ok)throw new Error(await r.text());return r.json()}
-function stag(s){const m={active:"active",warming:"warming",new:"new",banned:"banned",restricted:"restricted",paused:"paused"};return`<span class="tag ${m[s]||"paused"}">${s}</span>`}
-function pbar(d,max){if(!d)return"—";const p=Math.min(100,Math.round(d/(max||30)*100));return`<div style="display:flex;align-items:center;gap:6px"><div class="pbar"><div class="pfill" style="width:${p}%"></div></div><span style="font-size:10px;color:var(--muted)">${p}%</span></div>`}
-function ago(iso){if(!iso)return"—";const d=Math.floor((Date.now()-new Date(iso))/60000);if(d<1)return"just now";if(d<60)return d+"m ago";if(d<1440)return Math.floor(d/60)+"h ago";return Math.floor(d/1440)+"d ago"}
-async function loadMetrics(){try{const d=await api("/api/metrics");document.getElementById("m1").textContent=d.today?.dms_sent??0;document.getElementById("m2").textContent=d.fleet?.active??0;document.getElementById("m2s").textContent=`of ${d.fleet?.total??0} total`;document.getElementById("m3").textContent=d.fleet?.warming??0;document.getElementById("m3s").textContent=`${d.fleet?.new_accts??0} new`;document.getElementById("m4").textContent=d.queue?.pending??0;document.getElementById("m4s").textContent=`${d.queue?.in_review??0} in review`;document.getElementById("m5").textContent=d.responses_today??0;document.getElementById("m6").textContent=`$${(d.api_cost_today_usd??0).toFixed(3)}`;document.getElementById("s1").textContent=d.today?.likes_done??0;document.getElementById("s2").textContent=d.today?.follows_done??0;document.getElementById("s3").textContent=d.today?.errors_today??0;document.getElementById("s4").textContent=d.queue?.sent_total??0;document.getElementById("s5").textContent=d.fleet?.restricted??0}catch(e){console.warn(e)}}
-async function loadAccounts(){try{const a=await api("/api/accounts");document.getElementById("acct-cnt").textContent=`${a.length} accounts`;const tb=document.getElementById("atbody");if(!a.length){tb.innerHTML='<tr><td colspan="6" class="nd">No accounts. Import below ↓</td></tr>';return}tb.innerHTML=a.map(x=>`<tr><td><span style="color:var(--accent)">@${x.username||x.handle||"—"}</span></td><td>${stag(x.status||"new")}</td><td style="color:var(--muted2)">${x.warmup_day?`Day ${x.warmup_day}`:"—"}</td><td>${x.daily_dm_limit??x.dm_limit??"—"}</td><td>${pbar(x.warmup_day,30)}</td><td style="color:var(--muted);font-size:11px">${x.proxy_host?x.proxy_host.split(":")[0]:"—"}</td></tr>`).join("")}catch(e){console.warn(e)}}
-async function loadTasks(){try{const t=await api("/api/tasks");document.getElementById("qcnt").textContent=`${t.filter(x=>x.status==="pending").length} pending · ${t.filter(x=>x.status==="in_review").length} review`;const b=document.getElementById("q-body");if(!t.length){b.innerHTML='<div class="nd">Queue empty</div>';return}b.innerHTML=t.slice(0,12).map(x=>{const c=x.status==="sent"?"sent":x.status==="in_review"?"review":"pending";return`<div class="qi"><div class="qdot ${c}"></div><div><div class="qhandle">@${x.target_handle||x.username||"?"}</div><div class="qmsg">${x.message_preview||x.message||x.dm_text||"..."}</div><div class="qtime">${x.status} · ${ago(x.created_at||x.scheduled_at)}</div></div></div>`}).join("")}catch(e){console.warn(e)}}
-async function loadTimeline(){try{const e=await api("/api/timeline");const b=document.getElementById("tl-body");if(!e||!e.length){b.innerHTML='<div class="nd">No activity yet</div>';return}b.innerHTML=e.slice(0,20).map(x=>{const t=x.timestamp?new Date(x.timestamp).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"}):"—";return`<div class="tr"><span class="tt">${t}</span><span class="te">${x.event||x.action||x.description||"—"}</span></div>`}).join("")}catch(e){console.warn(e)}}
-async function checkAds(){try{const r=await fetch("http://localhost:50325/status",{signal:AbortSignal.timeout(2000)});const d=await r.json();const el=document.getElementById("ads-st");el.innerHTML=d.code===0?'<div class="sdot"></div><span>AdsPower</span>':'<div class="sdot" style="background:var(--warn);box-shadow:0 0 6px var(--warn)"></div><span>AdsPower</span>'}catch{document.getElementById("ads-st").innerHTML='<div class="sdot off"></div><span>AdsPower</span>'}}
-async function pauseAll(){try{await api("/api/tasks/pause-all",{method:"POST"});toast("Paused","ok");refresh()}catch(e){toast(e.message,"err")}}
-async function resumeAll(){try{await api("/api/tasks/resume-all",{method:"POST"});toast("Resumed","ok");refresh()}catch(e){toast(e.message,"err")}}
-async function bulkImport(){const csv=document.getElementById("csv").value.trim();if(!csv){toast("Paste CSV first","err");return}try{const lines=csv.split("
-").filter(l=>l.trim());const accounts=lines.map(l=>{const p=l.split(",").map(x=>x.trim());return{username:p[0],proxy:p[1]||"",adspower_profile_id:p[2]||""}});const r=await api("/api/accounts/bulk-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accounts})});toast(`Imported ${r.imported||accounts.length} accounts`,"ok");document.getElementById("csv").value="";refresh()}catch(e){toast("Error: "+e.message,"err")}}
-async function refresh(){const ic=document.getElementById("ri-icon");ic.classList.add("spin");await Promise.all([loadMetrics(),loadAccounts(),loadTasks(),loadTimeline(),checkAds()]);ic.classList.remove("spin");document.getElementById("ri-text").textContent=new Date().toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}
-refresh();setInterval(refresh,15000);
+const API = '';
+let refreshTimer = null;
+let refreshCountdown = 30;
+let currentQueueStatus = 'pending';
+
+// ── TAB SWITCHING ──────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('page-title').textContent = {
+    dashboard: 'Dashboard', accounts: 'Accounts', queue: 'DM Queue',
+    pipeline: 'Run Modules', settings: 'Settings'
+  }[name] || name;
+  if (name === 'accounts') loadAccounts();
+  if (name === 'queue') loadQueue(currentQueueStatus);
+  if (name === 'settings') checkSettings();
+}
+
+// ── API HELPERS ────────────────────────────────────────────────
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.json();
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const [metrics, profiles, tl] = await Promise.all([
+      api('/api/metrics'), api('/api/profiles/stats'), api('/api/timeline')
+    ]);
+    const t = metrics.today || {};
+    const f = metrics.fleet || {};
+    const q = metrics.queue || {};
+    setText('k-dms', t.dms_sent ?? 0);
+    setText('k-active', f.active ?? 0);
+    setText('k-total', f.total ?? 0);
+    setText('k-warming', f.warming ?? 0);
+    setText('k-queue', q.pending ?? 0);
+    setText('k-review', q.in_review ?? 0);
+    setText('k-resp', metrics.responses_today ?? 0);
+    setText('k-cost', '$' + (metrics.api_cost_today_usd ?? 0).toFixed(3));
+    setText('stat-dms', t.dms_sent ?? 0);
+    setText('stat-likes', t.likes_done ?? 0);
+    setText('stat-follows', t.follows_done ?? 0);
+    setText('stat-errors', t.errors_today ?? 0);
+    const maxDms = 500;
+    document.getElementById('k-dms-bar').style.width = Math.min(100, ((t.dms_sent||0)/maxDms)*100) + '%';
+    setText('badge-queue', (q.pending ?? 0) + (q.in_review ?? 0));
+    setText('p-total', profiles.total ?? 0);
+    setText('p-enriched', profiles.enriched ?? 0);
+    setText('p-pending', profiles.pending ?? 0);
+    setText('p-contacted', profiles.contacted ?? 0);
+    renderTimeline(tl);
+    document.getElementById('sd-db').className = 'status-dot on';
+  } catch (e) {
+    document.getElementById('sd-db').className = 'status-dot';
+    console.error(e);
+  }
+}
+
+function renderTimeline(items) {
+  const el = document.getElementById('timeline-body');
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="empty-state"><div class="e-icon">⏱</div><div class="e-msg">No activity yet</div></div>';
+    return;
+  }
+  const colors = { send_dm: 'var(--blue)', like_tweet: 'var(--accent)', follow_user: 'var(--green)', default: 'var(--muted2)' };
+  el.innerHTML = items.map(r => {
+    const c = colors[r.action_type] || colors.default;
+    const ok = r.status === 'success';
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border)">
+      <div style="width:6px;height:6px;border-radius:50%;background:${ok ? c : 'var(--red)'};margin-top:4px;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:var(--text2)">${r.action_type} → <span style="color:${c}">@${r.target_username||'?'}</span> <span style="color:var(--muted2)">(${r.account_username||'?'})</span></div>
+        ${r.error_message ? `<div style="font-size:9px;color:var(--red);margin-top:2px">${r.error_message}</div>` : ''}
+      </div>
+      <div style="font-size:9px;color:var(--muted);white-space:nowrap">${timeAgo(r.executed_at)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── ACCOUNTS ──────────────────────────────────────────────────
+async function loadAccounts() {
+  try {
+    const rows = await api('/api/accounts');
+    setText('badge-accounts', rows.length);
+    const tbody = document.getElementById('accounts-tbody');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="e-icon">👤</div><div class="e-msg">No accounts yet</div><div>Click "+ Add Account" to get started</div></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const stage = r.warmup_stage || r.state || 'new';
+      const day = r.warmup_day || 0;
+      const maxDay = 21;
+      const pct = Math.min(100, Math.round((day / maxDay) * 100));
+      const health = r.health_score != null ? r.health_score.toFixed(0) : '—';
+      const healthColor = r.health_score >= 80 ? 'var(--green)' : r.health_score >= 50 ? 'var(--orange)' : 'var(--red)';
+      return `<tr>
+        <td style="color:var(--text);font-weight:500">@${r.username || '—'}</td>
+        <td><code>${r.adspower_profile_id || '—'}</code></td>
+        <td><span class="tag ${stage}">${stage}</span></td>
+        <td style="color:var(--accent)">${day}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="wb-bar"><div class="wb-fill" style="width:${pct}%"></div></div>
+            <span style="font-size:9px;color:var(--muted2)">${pct}%</span>
+          </div>
+        </td>
+        <td style="color:var(--text2)">${r.total_sent ?? 0}</td>
+        <td><span style="color:${healthColor};font-weight:500">${health}</span></td>
+        <td style="color:var(--muted2)">${r.proxy_country || '—'}</td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <button class="btn sm danger" onclick="deleteAccount(${r.id})">✕</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function addAccount() {
+  const data = {
+    username: v('f-username'), display_name: v('f-display'),
+    adspower_profile_id: v('f-adspower'), serial_number: v('f-serial') || null,
+    category_focus: v('f-category'),
+    proxy_host: v('f-phost'), proxy_port: parseInt(v('f-pport')) || null,
+    proxy_user: v('f-puser'), proxy_pass: v('f-ppass'),
+    proxy_country: v('f-pcountry'), proxy_city: v('f-pcity'),
+    proxy_type: 'socks5', notes: ''
+  };
+  if (!data.username || !data.adspower_profile_id) { toast('Username and AdsPower ID required', 'err'); return; }
+  try {
+    await api('/api/accounts/create', 'POST', data);
+    toast('Account added ✓', 'ok');
+    closeModal('modal-add-account');
+    loadAccounts();
+  } catch(e) { toast('Error: ' + e.message, 'err'); }
+}
+
+async function deleteAccount(id) {
+  if (!confirm('Delete this account?')) return;
+  await api('/api/accounts/' + id, 'DELETE');
+  toast('Account removed', 'ok');
+  loadAccounts();
+}
+
+// ── QUEUE ─────────────────────────────────────────────────────
+async function loadQueue(status) {
+  currentQueueStatus = status;
+  const body = document.getElementById('queue-body');
+  body.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  try {
+    const rows = await api('/api/tasks?status=' + status);
+    setText('badge-queue', rows.length);
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty-state"><div class="e-icon">📬</div><div class="e-msg">No messages with status "' + status + '"</div></div>';
+      return;
+    }
+    body.innerHTML = rows.map(r => `
+      <div class="q-card">
+        <div class="q-card-head">
+          <span class="q-target">@${r.target_username || '?'} <span style="color:var(--muted2);font-weight:400">${r.target_display ? '· ' + r.target_display : ''}</span></span>
+          <span class="tag ${r.status}">${r.status}</span>
+        </div>
+        <div class="q-text">${r.message_text || ''}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div class="q-meta">
+            <span>tier: <b style="color:var(--accent)">${r.tier || '—'}</b></span>
+            <span>via @${r.account_username || '—'}</span>
+            <span>${timeAgo(r.created_at)}</span>
+            ${r.ab_variant ? `<span>variant: ${r.ab_variant}</span>` : ''}
+          </div>
+          <div class="q-actions">
+            ${r.status === 'pending' || r.status === 'in_review' ? `
+              <button class="btn sm success" onclick="approveTask(${r.id})">✓ Approve</button>
+              <button class="btn sm danger" onclick="rejectTask(${r.id})">✕ Reject</button>
+            ` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) { body.innerHTML = '<div class="empty-state">Error loading queue: ' + e.message + '</div>'; }
+}
+
+function setQFilter(el) {
+  document.querySelectorAll('#queue-filters .btn').forEach(b => b.classList.remove('primary'));
+  el.classList.add('primary');
+}
+
+async function approveTask(id) {
+  await api('/api/tasks/' + id + '/approve', 'POST');
+  toast('Approved ✓', 'ok');
+  loadQueue(currentQueueStatus);
+}
+async function rejectTask(id) {
+  await api('/api/tasks/' + id + '/reject', 'POST');
+  toast('Rejected', 'ok');
+  loadQueue(currentQueueStatus);
+}
+async function approveAll() {
+  await api('/api/tasks/approve-all', 'POST');
+  toast('All in_review messages approved ✓', 'ok');
+  loadQueue(currentQueueStatus);
+}
+async function pauseAll() {
+  await api('/api/tasks/pause-all', 'POST');
+  toast('All pending tasks paused', 'ok');
+  loadDashboard();
+}
+
+// ── MODULES ───────────────────────────────────────────────────
+async function runModule(mod, params) {
+  if (mod === 'm1') {
+    const q = document.getElementById('m1-query');
+    if (q && q.value) params.query = q.value;
+    const l = document.getElementById('m1-limit');
+    if (l && l.value) params.limit = parseInt(l.value) || 50;
+  }
+  const btn = document.getElementById('btn-' + mod);
+  const out = document.getElementById('out-' + mod);
+  if (btn) { btn.textContent = '⏳ Running…'; btn.classList.add('running'); btn.disabled = true; }
+  if (out) { out.className = 'module-output show'; out.textContent = 'Running ' + mod.toUpperCase() + '…'; }
+  try {
+    const r = await api('/api/run/' + mod, 'POST', params);
+    const txt = (r.stdout || '') + (r.stderr ? '\n[stderr] ' + r.stderr : '');
+    if (out) {
+      out.className = 'module-output show' + (r.returncode !== 0 ? ' err' : '');
+      out.textContent = txt || 'Done (no output)';
+    }
+    if (r.returncode === 0) toast(mod.toUpperCase() + ' completed ✓', 'ok');
+    else toast(mod.toUpperCase() + ' returned errors', 'err');
+    loadDashboard();
+  } catch(e) {
+    if (out) { out.className = 'module-output show err'; out.textContent = 'Error: ' + e.message; }
+    toast(mod.toUpperCase() + ' failed: ' + e.message, 'err');
+  }
+  if (btn) { btn.textContent = '▶ Run'; btn.classList.remove('running'); btn.disabled = false; }
+}
+
+async function runSmokeTest() {
+  const btn = document.getElementById('btn-smoke');
+  const out = document.getElementById('out-smoke');
+  btn.textContent = '⏳ Running…'; btn.disabled = true;
+  out.className = 'module-output show'; out.textContent = 'Running smoke test…';
+  try {
+    const r = await fetch('/api/run/m4', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({batch_size:1, dry_run:true})
+    });
+    const d = await r.json();
+    // Run actual smoke test via subprocess
+    const sr = await api('/api/run/m4', 'POST', {batch_size:1, dry_run:true});
+    out.textContent = 'Quick check: M4 dry_run\n' + (sr.stdout || '') + '\n' + (sr.stderr || '');
+    out.className = 'module-output show' + (sr.returncode !== 0 ? ' err' : '');
+    toast(sr.returncode === 0 ? 'System OK ✓' : 'Issues detected', sr.returncode === 0 ? 'ok' : 'err');
+  } catch(e) { out.textContent = 'Error: ' + e.message; out.className = 'module-output show err'; }
+  btn.textContent = '▶ Run Smoke Test'; btn.disabled = false;
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────
+async function checkSettings() {
+  try {
+    const s = await api('/api/settings');
+    // AdsPower
+    const dot = document.getElementById('sd-adspower');
+    const lbl = document.getElementById('conn-ads-label');
+    const cdot = document.getElementById('conn-ads');
+    if (s.adspower_online) {
+      dot.className = 'status-dot on';
+      cdot.className = 'status-dot on';
+      if(lbl) { lbl.textContent = 'Connected'; lbl.style.color = 'var(--green)'; }
+    } else {
+      dot.className = 'status-dot warn';
+      cdot.className = 'status-dot warn';
+      if(lbl) { lbl.textContent = 'Not running'; lbl.style.color = 'var(--orange)'; }
+    }
+    // Twitter
+    const twdot = document.getElementById('sd-twitter');
+    const twlbl = document.getElementById('conn-tw-label');
+    const twcdot = document.getElementById('conn-tw');
+    if (s.twitter_bearer_token === '***') {
+      twdot.className = 'status-dot on';
+      if(twcdot) twcdot.className = 'status-dot on';
+      if(twlbl) { twlbl.textContent = 'Configured'; twlbl.style.color = 'var(--green)'; }
+    } else {
+      twdot.className = 'status-dot';
+      if(twlbl) { twlbl.textContent = 'Not configured'; twlbl.style.color = 'var(--muted2)'; }
+    }
+    // Anthropic key indicator
+    const ant = document.getElementById('s-anthropic');
+    const tw = document.getElementById('s-twitter');
+    if(ant && s.anthropic_api_key === '***') ant.placeholder = '(saved — enter new to update)';
+    if(tw && s.twitter_bearer_token === '***') tw.placeholder = '(saved — enter new to update)';
+  } catch(e) { console.error(e); }
+}
+
+async function saveSettings() {
+  const data = {};
+  const ant = v('s-anthropic'); if (ant) data.anthropic_api_key = ant;
+  const tw = v('s-twitter'); if (tw) data.twitter_bearer_token = tw;
+  try {
+    await api('/api/settings', 'POST', data);
+    toast('Settings saved ✓', 'ok');
+    document.getElementById('s-anthropic').value = '';
+    document.getElementById('s-twitter').value = '';
+    checkSettings();
+  } catch(e) { toast('Save failed: ' + e.message, 'err'); }
+}
+
+async function bulkImport() {
+  const csv = v('s-csv');
+  if (!csv) { toast('No CSV data', 'err'); return; }
+  const lines = csv.trim().split('\n').filter(l => l.trim());
+  const header = lines[0].toLowerCase().includes('username');
+  const data = (header ? lines.slice(1) : lines).map(l => {
+    const [username, adspower_profile_id, proxy_host, proxy_port, proxy_user, proxy_pass, proxy_country] = l.split(',').map(s => s.trim());
+    return { username, adspower_profile_id, serial_number: null,
+      proxy_host: proxy_host||'', proxy_port: parseInt(proxy_port)||null,
+      proxy_user: proxy_user||'', proxy_pass: proxy_pass||'',
+      proxy_country: proxy_country||'', category_focus: 'automation_builder' };
+  }).filter(r => r.username);
+  try {
+    const r = await api('/api/accounts/bulk-import', 'POST', data);
+    toast('Imported ' + r.created + ' accounts ✓', 'ok');
+    document.getElementById('s-csv').value = '';
+  } catch(e) { toast('Import failed: ' + e.message, 'err'); }
+}
+
+// ── MODAL ─────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+// ── TOAST ─────────────────────────────────────────────────────
+function toast(msg, type='') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = (type === 'ok' ? '✓' : type === 'err' ? '✕' : 'ℹ') + ' ' + msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── UTILS ─────────────────────────────────────────────────────
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function v(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function timeAgo(dt) {
+  if (!dt) return '—';
+  const d = new Date(dt), now = Date.now(), diff = (now - d) / 1000;
+  if (diff < 60) return Math.round(diff) + 's ago';
+  if (diff < 3600) return Math.round(diff/60) + 'm ago';
+  if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+  return Math.round(diff/86400) + 'd ago';
+}
+
+// ── AUTO REFRESH ──────────────────────────────────────────────
+function refreshAll() {
+  loadDashboard();
+  refreshCountdown = 30;
+}
+function startRefreshTimer() {
+  setInterval(() => {
+    refreshCountdown--;
+    const el = document.getElementById('refresh-ticker');
+    if (el) el.textContent = 'refresh in ' + refreshCountdown + 's';
+    if (refreshCountdown <= 0) { refreshAll(); }
+  }, 1000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+loadDashboard();
+checkSettings();
+startRefreshTimer();
 </script>
 </body>
 </html>

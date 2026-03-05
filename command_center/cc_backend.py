@@ -247,3 +247,101 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5555, debug=True)
+
+# ── NEW OPERATOR ENDPOINTS ────────────────────────────────────────────────────
+
+import subprocess, sys, json as _json
+from pathlib import Path
+
+PROJECT = Path(__file__).parent.parent
+PYTHON  = sys.executable
+
+# Settings: read/write infra/config.py
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    cfg = PROJECT / "infra" / "config.py"
+    result = {"twitter_bearer_token": "", "anthropic_api_key": "", "adspower_url": "http://localhost:50325"}
+    if cfg.exists():
+        txt = cfg.read_text()
+        import re
+        for key, var in [("twitter_bearer_token","TWITTER_BEARER_TOKEN"),("anthropic_api_key","ANTHROPIC_API_KEY")]:
+            m = re.search(rf'{var}\s*=\s*["\']([^"\']*)["\']', txt)
+            if m: result[key] = "***" if m.group(1) else ""
+        result["config_exists"] = True
+    else:
+        result["config_exists"] = False
+    # check adspower
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://localhost:50325/status", timeout=2): result["adspower_online"] = True
+    except: result["adspower_online"] = False
+    return jsonify(result)
+
+@app.route("/api/settings", methods=["POST"])
+def save_settings():
+    data = request.json
+    cfg = PROJECT / "infra" / "config.py"
+    existing = {"TWITTER_BEARER_TOKEN": "", "ANTHROPIC_API_KEY": ""}
+    if cfg.exists():
+        import re
+        txt = cfg.read_text()
+        for var in existing:
+            m = re.search(rf'{var}\s*=\s*["\']([^"\']*)["\']', txt)
+            if m and m.group(1): existing[var] = m.group(1)
+    tw  = data.get("twitter_bearer_token") or existing["TWITTER_BEARER_TOKEN"]
+    ant = data.get("anthropic_api_key")    or existing["ANTHROPIC_API_KEY"]
+    import getpass
+    cfg.write_text(f'DB_CONFIG = {{"host": "localhost", "port": 5432, "dbname": "marketing_dronor", "user": "{getpass.getuser()}", "password": ""}}\nTWITTER_BEARER_TOKEN = "{tw}"\nANTHROPIC_API_KEY = "{ant}"\n')
+    return jsonify({"status": "saved"})
+
+# Tasks: approve / reject single message
+@app.route("/api/tasks/<int:task_id>/approve", methods=["POST"])
+def approve_task(task_id):
+    db_execute("UPDATE message_queue SET status='approved' WHERE id=%s", [task_id])
+    return jsonify({"status": "approved"})
+
+@app.route("/api/tasks/<int:task_id>/reject", methods=["POST"])
+def reject_task(task_id):
+    db_execute("UPDATE message_queue SET status='rejected' WHERE id=%s", [task_id])
+    return jsonify({"status": "rejected"})
+
+@app.route("/api/tasks/approve-all", methods=["POST"])
+def approve_all():
+    db_execute("UPDATE message_queue SET status='approved' WHERE status='in_review'")
+    return jsonify({"status": "ok"})
+
+# Pipeline: run module
+@app.route("/api/run/<module>", methods=["POST"])
+def run_module(module):
+    allowed = {"m1": "m1_data_collector", "m4": "m4_message_generator",
+               "m3": "m3_account_manager", "m2": "m2_profile_analyzer"}
+    if module not in allowed: return jsonify({"error": "unknown module"}), 400
+    params = request.json or {}
+    script = f"""
+import sys; sys.path.insert(0,'{PROJECT}')
+"""
+    if module == "m1":
+        script += "from m1_data_collector.collection_scheduler import run_collection; print(run_collection(**" + repr(params) + "))"
+    elif module == "m4":
+        script += "from m4_message_generator.message_generator import message_generator; print(message_generator(**" + repr(params) + "))"
+    elif module == "m2":
+        script += "from m2_profile_analyzer.wave_classifier import classify_batch; print(classify_batch(**" + repr(params) + "))"
+    elif module == "m3":
+        script += "from m3_account_manager.warmup_scheduler import run_warmup_cycle; print(run_warmup_cycle(**" + repr(params) + "))"
+    try:
+        result = subprocess.run([PYTHON, "-c", script], capture_output=True, text=True, timeout=120, cwd=str(PROJECT))
+        return jsonify({"status": "ok", "stdout": result.stdout[-2000:], "stderr": result.stderr[-500:], "returncode": result.returncode})
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "timeout", "stdout": "", "stderr": "timed out after 120s", "returncode": -1})
+
+# Accounts: delete
+@app.route("/api/accounts/<int:account_id>", methods=["DELETE"])
+def delete_account(account_id):
+    db_execute("DELETE FROM adspower_profiles WHERE id=%s", [account_id])
+    return jsonify({"status": "deleted"})
+
+# Profiles count for dashboard
+@app.route("/api/profiles/stats")
+def profiles_stats():
+    r = db_query("SELECT COUNT(*) AS total, COUNT(*) FILTER(WHERE outreach_status='pending') AS pending, COUNT(*) FILTER(WHERE tier IS NOT NULL) AS enriched, COUNT(*) FILTER(WHERE outreach_status='sent') AS contacted FROM twitter_profiles")[0]
+    return jsonify(dict(r))
