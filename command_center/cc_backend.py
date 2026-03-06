@@ -121,12 +121,6 @@ def require_admin(f):
 
 # =========== Static Files ===========
 
-
-def _q(query):
-    """Convert SQLite ? placeholders to PostgreSQL %s if using PostgreSQL."""
-    if DATABASE_URL:
-        return query.replace('?', '%s')
-    return query
 @app.route('/')
 def serve_frontend():
     return send_from_directory(app.static_folder, 'cc_frontend.html')
@@ -202,7 +196,7 @@ def login():
     db = get_db()
     try:
         cursor = db.execute(
-            'SELECT * FROM operators WHERE name = %s AND pin_hash = %s' if DATABASE_URL else 'SELECT * FROM operators WHERE name = ? AND pin_hash = ?',
+            'SELECT * FROM operators WHERE name = ? AND pin_hash = ?',
             (name, hash_pin(pin))
         )
         user = cursor.fetchone()
@@ -407,7 +401,7 @@ def delete_account(id):
     """Delete an account."""
     db = get_db()
     try:
-        db.execute(_q('DELETE FROM accounts WHERE id = ?', (id,))
+        db.execute('DELETE FROM accounts WHERE id = ?', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -554,7 +548,7 @@ def lock_queue_item(id):
     db = get_db()
     try:
         # Check if already locked by someone else
-        row = db.execute(_q('SELECT locked_by, locked_at FROM dm_queue WHERE id = ?', (id,)).fetchone()
+        row = db.execute('SELECT locked_by, locked_at FROM dm_queue WHERE id = ?', (id,)).fetchone()
         if row and row['locked_by'] and row['locked_by'] != operator:
             # Check if lock expired
             if row['locked_at']:
@@ -577,7 +571,7 @@ def unlock_queue_item(id):
     """Release lock on queue item (MKT-82)."""
     db = get_db()
     try:
-        db.execute(_q('UPDATE dm_queue SET locked_by = NULL, locked_at = NULL WHERE id = ?', (id,))
+        db.execute('UPDATE dm_queue SET locked_by = NULL, locked_at = NULL WHERE id = ?', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -641,7 +635,7 @@ def get_conversation_detail(conv_id):
     """Get conversation messages."""
     db = get_db()
     try:
-        cursor = db.execute(_q('SELECT * FROM conversations WHERE id = ?', (conv_id,))
+        cursor = db.execute('SELECT * FROM conversations WHERE id = ?', (conv_id,))
         conv = cursor.fetchone()
         if not conv:
             return jsonify({'error': 'Not found'}), 404
@@ -653,7 +647,7 @@ def get_conversation_detail(conv_id):
         messages = [dict(row) for row in cursor.fetchall()]
         
         # Mark as read
-        db.execute(_q('UPDATE conversations SET unread = 0 WHERE id = ?', (conv_id,))
+        db.execute('UPDATE conversations SET unread = 0 WHERE id = ?', (conv_id,))
         db.commit()
         
         return jsonify({
@@ -685,7 +679,7 @@ def send_reply(conv_id):
     db = get_db()
     try:
         # Get conversation
-        cursor = db.execute(_q('SELECT * FROM conversations WHERE id = ?', (conv_id,))
+        cursor = db.execute('SELECT * FROM conversations WHERE id = ?', (conv_id,))
         conv = cursor.fetchone()
         if not conv:
             return jsonify({'success': False, 'error': 'Conversation not found'})
@@ -1126,14 +1120,14 @@ def delete_operator(id):
     db = get_db()
     try:
         # Don't delete last admin
-        cursor = db.execute(_q('SELECT role FROM operators WHERE id = ?', (id,))
+        cursor = db.execute('SELECT role FROM operators WHERE id = ?', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
             cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
-        db.execute(_q('DELETE FROM operators WHERE id = ?', (id,))
+        db.execute('DELETE FROM operators WHERE id = ?', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
