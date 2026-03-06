@@ -1264,6 +1264,17 @@ kbd {
       Proxies
       <span class="nav-badge" id="nb-proxies">—</span>
     </div>
+    <div class="nav-section">DATA</div>
+    <div class="nav-item" onclick="switchTab('profiles',this)" id="nav-profiles">
+      <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0H3z"/></svg>
+      Profiles
+      <span class="nav-badge" id="nb-profiles">—</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('sendactivity',this)" id="nav-sendactivity">
+      <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2l12 6-12 6V9l8-1-8-1V2z"/></svg>
+      Send Activity
+      <span class="nav-badge" id="nb-sendactivity">—</span>
+    </div>
     <div class="nav-item">
       <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 3v4l3 1-1 1.7L7 9.5V4z"/></svg>
       Warmup Plans
@@ -1483,6 +1494,66 @@ kbd {
         </table>
       </div>
     </div>
+
+    <!-- ── PROFILES TAB ── -->
+    <div class="tab-content" id="tab-profiles">
+      <!-- Toolbar -->
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="profiles-search" type="text" placeholder="Search username / bio..."
+          style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 10px;border-radius:4px;width:220px"
+          oninput="debounceProfileSearch()">
+        <select id="profiles-tier" onchange="loadProfiles(1)"
+          style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:4px">
+          <option value="">ALL TIERS</option>
+          <option value="S">S</option><option value="A">A</option>
+          <option value="B">B</option><option value="C">C</option><option value="D">D</option>
+        </select>
+        <select id="profiles-contacted" onchange="loadProfiles(1)"
+          style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:4px">
+          <option value="">ALL</option>
+          <option value="false">NOT CONTACTED</option>
+          <option value="true">CONTACTED</option>
+        </select>
+        <button class="run-btn" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="loadProfiles(1)">&#x21BB; REFRESH</button>
+        <div style="flex:1"></div>
+        <span id="profiles-count" style="font-family:var(--mono);font-size:10px;color:var(--text3)"></span>
+      </div>
+      <!-- Table -->
+      <div style="flex:1;overflow-y:auto">
+        <table>
+          <thead><tr>
+            <th>USERNAME</th><th>NAME</th><th>BIO</th>
+            <th>FOLLOWERS</th><th>TIER</th><th>CONTACTED</th><th>COLLECTED</th>
+          </tr></thead>
+          <tbody id="profiles-tbody"></tbody>
+        </table>
+      </div>
+      <!-- Pagination -->
+      <div id="profiles-pagination" style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--text3)"></div>
+    </div>
+
+    <!-- ── SEND ACTIVITY TAB ── -->
+    <div class="tab-content" id="tab-sendactivity">
+      <!-- Toolbar -->
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+        <button class="run-btn" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="loadSendActivity()">&#x21BB; REFRESH</button>
+        <button class="run-btn" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="startActivityPolling()">&#9654; AUTO-REFRESH</button>
+        <div style="flex:1"></div>
+        <span id="sa-stats" style="font-family:var(--mono);font-size:10px;color:var(--text3)"></span>
+      </div>
+      <!-- Jobs table -->
+      <div style="flex:1;overflow-y:auto">
+        <table>
+          <thead><tr>
+            <th>JOB #</th><th>STATUS</th><th>TYPE</th>
+            <th>FROM</th><th>TO</th><th>TIER</th>
+            <th>OPERATOR</th><th>BROWSER READY</th><th>COMPLETED</th><th>MESSAGE</th>
+          </tr></thead>
+          <tbody id="sendactivity-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ── ADMIN TAB ── -->
     <div class="tab-content admin-only" id="tab-admin">
       <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
@@ -2251,6 +2322,8 @@ function switchTab(tab, el) {
   if (tab === 'proxies')       loadProxies();
   if (tab === 'pipeline')      renderModules();
   if (tab === 'admin')         loadAdmin();
+  if (tab === 'profiles')      loadProfiles(1);
+  if (tab === 'sendactivity')  loadSendActivity();
 }
 
 // ── DEMO DATA (offline) ──
@@ -2570,6 +2643,165 @@ window.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// PROFILES TAB
+// ══════════════════════════════════════════════════════════════════════════
+let profilesPage = 1;
+let profilesTotal = 0;
+let profilesSearchTimer = null;
+
+function debounceProfileSearch() {
+  clearTimeout(profilesSearchTimer);
+  profilesSearchTimer = setTimeout(() => loadProfiles(1), 400);
+}
+
+async function loadProfiles(page = 1) {
+  profilesPage = page;
+  const search    = document.getElementById('profiles-search')?.value || '';
+  const tier      = document.getElementById('profiles-tier')?.value || '';
+  const contacted = document.getElementById('profiles-contacted')?.value || '';
+
+  const params = new URLSearchParams({ page, per_page: 50 });
+  if (search)    params.set('search', search);
+  if (tier)      params.set('tier', tier);
+  if (contacted) params.set('contacted', contacted);
+
+  const tbody = document.getElementById('profiles-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">Loading...</td></tr>';
+
+  try {
+    const r = await apiFetch('/cc/v2/profiles?' + params);
+    profilesTotal = r.total;
+    document.getElementById('profiles-count').textContent =
+      `${r.total.toLocaleString()} profiles — page ${r.page}/${r.pages}`;
+    document.getElementById('nb-profiles').textContent = r.total.toLocaleString();
+
+    if (!r.items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">No profiles found</td></tr>';
+      renderProfilesPagination(r);
+      return;
+    }
+
+    tbody.innerHTML = r.items.map(p => {
+      const tierColor = {S:'var(--accent)',A:'#a78bfa',B:'var(--yellow)',C:'var(--text2)',D:'var(--text3)'}[p.tier] || 'var(--text3)';
+      const contactedBadge = p.contacted
+        ? '<span style="color:var(--accent);font-size:9px">✓ SENT</span>'
+        : '<span style="color:var(--text3);font-size:9px">—</span>';
+      const bio = (p.bio || '').slice(0, 60).replace(/</g,'&lt;');
+      const date = p.collected_at ? p.collected_at.slice(0,10) : '—';
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:11px">
+          <a href="https://twitter.com/${p.username}" target="_blank"
+             style="color:var(--accent);text-decoration:none">@${p.username}</a>
+        </td>
+        <td style="font-size:11px;color:var(--text2)">${(p.full_name||'').replace(/</g,'&lt;').slice(0,25)}</td>
+        <td style="font-size:10px;color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(p.bio||'').replace(/"/g,'&quot;')}">${bio}</td>
+        <td style="font-family:var(--mono);font-size:11px;text-align:right">${(p.followers_count||0).toLocaleString()}</td>
+        <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:${tierColor}">${p.tier||'—'}</td>
+        <td>${contactedBadge}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${date}</td>
+      </tr>`;
+    }).join('');
+
+    renderProfilesPagination(r);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#f87171">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderProfilesPagination(r) {
+  const el = document.getElementById('profiles-pagination');
+  if (!el || r.pages <= 1) { if(el) el.innerHTML=''; return; }
+  const btns = [];
+  if (r.page > 1) btns.push(`<button class="run-btn" style="padding:4px 10px;font-size:10px" onclick="loadProfiles(${r.page-1})">&#8592; PREV</button>`);
+  // Show window of pages
+  const start = Math.max(1, r.page - 2);
+  const end   = Math.min(r.pages, r.page + 2);
+  for (let i = start; i <= end; i++) {
+    const active = i === r.page ? 'background:var(--accent);color:#000;' : 'background:var(--bg4);color:var(--text2);border:1px solid var(--border);';
+    btns.push(`<button class="run-btn" style="padding:4px 10px;font-size:10px;${active}" onclick="loadProfiles(${i})">${i}</button>`);
+  }
+  if (r.page < r.pages) btns.push(`<button class="run-btn" style="padding:4px 10px;font-size:10px" onclick="loadProfiles(${r.page+1})">NEXT &#8594;</button>`);
+  btns.push(`<span style="margin-left:8px">${r.total.toLocaleString()} total</span>`);
+  el.innerHTML = btns.join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SEND ACTIVITY TAB
+// ══════════════════════════════════════════════════════════════════════════
+let activityPollingInterval = null;
+
+async function loadSendActivity() {
+  const tbody = document.getElementById('sendactivity-tbody');
+  if (!tbody) return;
+  try {
+    const jobs = await apiFetch('/cc/v2/send-jobs');
+    document.getElementById('nb-sendactivity').textContent = jobs.length;
+
+    const sent     = jobs.filter(j => j.status === 'sent').length;
+    const active   = jobs.filter(j => ['claimed','browser_ready'].includes(j.status)).length;
+    const failed   = jobs.filter(j => j.status === 'failed').length;
+    document.getElementById('sa-stats').textContent =
+      `${sent} sent · ${active} in progress · ${failed} failed`;
+
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text3)">No jobs yet. Approve messages in Queue to create jobs.</td></tr>';
+      return;
+    }
+
+    const statusColors = {
+      queued:        'color:var(--text3)',
+      claimed:       'color:var(--yellow)',
+      browser_ready: 'color:#60a5fa',
+      sent:          'color:var(--accent)',
+      failed:        'color:#f87171',
+      skipped:       'color:var(--text3)'
+    };
+    const statusIcons = {
+      queued:'⏳', claimed:'🔒', browser_ready:'🌐', sent:'✅', failed:'❌', skipped:'⏭'
+    };
+
+    tbody.innerHTML = jobs.map(j => {
+      const sc = statusColors[j.status] || '';
+      const si = statusIcons[j.status] || '';
+      const msgPreview = (j.message_text||'').slice(0,50).replace(/</g,'&lt;');
+      const browserReady = j.browser_ready_at ? j.browser_ready_at.slice(11,19) : '—';
+      const completed    = j.completed_at    ? j.completed_at.slice(11,19)    : '—';
+      const tierColor = {S:'var(--accent)',A:'#a78bfa',B:'var(--yellow)'}[j.tier] || 'var(--text3)';
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:11px">#${j.id}</td>
+        <td style="font-family:var(--mono);font-size:11px;${sc}">${si} ${j.status.toUpperCase()}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text2)">${(j.send_type||'dm').toUpperCase()}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">@${j.sender_username||'—'}</td>
+        <td style="font-family:var(--mono);font-size:11px">
+          <a href="https://twitter.com/${j.target_username}" target="_blank"
+             style="color:var(--accent);text-decoration:none">@${j.target_username||'—'}</a>
+        </td>
+        <td style="font-family:var(--mono);font-size:11px;color:${tierColor}">${j.tier||'—'}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${j.claimed_by||'—'}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${browserReady}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${completed}</td>
+        <td style="font-size:10px;color:var(--text3);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${msgPreview}">${msgPreview}${j.error_msg ? ' <span style='color:#f87171'>[ERR: '+j.error_msg.slice(0,30)+']</span>' : ''}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:20px;color:#f87171">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function startActivityPolling() {
+  if (activityPollingInterval) {
+    clearInterval(activityPollingInterval);
+    activityPollingInterval = null;
+    document.querySelector('#tab-sendactivity .run-btn:nth-child(2)')?.setAttribute('style',
+      'background:var(--bg4);color:var(--text2);border:1px solid var(--border)');
+    return;
+  }
+  loadSendActivity();
+  activityPollingInterval = setInterval(loadSendActivity, 5000);
+}
 </script>
 </body>
 </html>
