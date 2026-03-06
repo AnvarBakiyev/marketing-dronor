@@ -205,7 +205,7 @@ def login():
             return jsonify({'success': False, 'error': 'Invalid credentials'})
         
         # Update last active
-        db.execute('UPDATE operators SET last_active = ? WHERE id = ?',
+        db.execute('UPDATE operators SET last_active = %s WHERE id = %s' if DATABASE_URL else 'UPDATE operators SET last_active = ? WHERE id = ?',
                    (datetime.now().isoformat(), user['id']))
         db.commit()
         
