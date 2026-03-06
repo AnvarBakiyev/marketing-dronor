@@ -4,13 +4,13 @@ setlocal EnableDelayedExpansion
 
 cls
 echo.
-echo   ╔══════════════════════════════════════════════╗
-echo   ║      Marketing Dronor — Установка            ║
-echo   ║      Windows Edition                         ║
-echo   ╚══════════════════════════════════════════════╝
+echo   ============================================
+echo   Marketing Dronor -- Installation
+echo   Windows Edition
+echo   ============================================
 echo.
-echo   Этот скрипт установит всё необходимое.
-echo   Время установки: 10-15 минут.
+echo   This script will install everything needed.
+echo   Time: ~15 minutes.
 echo.
 pause
 
@@ -18,166 +18,161 @@ set STATE=%USERPROFILE%\.marketing_dronor
 set PROJECT=%USERPROFILE%\MarketingDronor
 if not exist "%STATE%" mkdir "%STATE%"
 
-:: ── 1. Проверяем права администратора ─────────────
+:: --- 1. Admin rights ---
 echo.
-echo ━━━  Проверка прав  ━━━
+echo --- Checking admin rights ---
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    echo   ОШИБКА: Запусти установщик от имени Администратора!
-    echo   Правая кнопка мыши на файле → "Запуск от имени администратора"
+    echo ERROR: Run as Administrator!
+    echo Right-click the file and choose "Run as administrator"
     pause
     exit /b 1
 )
-echo   ✓  Права администратора есть
+echo [OK] Admin rights confirmed
 
-:: ── 2. Winget (встроен в Windows 10/11) ──────────
+:: --- 2. Winget ---
 echo.
-echo ━━━  Менеджер пакетов  ━━━
+echo --- Package manager ---
 winget --version >nul 2>&1
 if %errorLevel% neq 0 (
-    echo   → Устанавливаем App Installer (winget)...
+    echo Installing App Installer (winget)...
     start ms-appinstaller:
-    echo   Дождись установки, затем нажми любую клавишу
+    echo Wait for installation to finish, then press any key
     pause
 )
-echo   ✓  winget доступен
+echo [OK] winget available
 
-:: ── 3. Python 3.11 ────────────────────────────────
+:: --- 3. Python 3.11 ---
 echo.
-echo ━━━  Python 3.11  ━━━
+echo --- Python 3.11 ---
 python --version >nul 2>&1
 if %errorLevel% equ 0 (
-    for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYVER=%%v
-    echo   ✓  Python !PYVER! найден
+    echo [OK] Python found
 ) else (
-    echo   → Устанавливаем Python 3.11...
+    echo Installing Python 3.11...
     winget install Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
     if !errorLevel! neq 0 (
-        echo   ОШИБКА: Не удалось установить Python
-        echo   Скачай вручную: https://python.org/downloads
+        echo ERROR: Could not install Python
+        echo Download manually: https://python.org/downloads
         pause
         exit /b 1
     )
-    echo   ✓  Python установлен
-    :: Обновляем PATH
+    echo [OK] Python installed
     set PATH=%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts;%PATH%
 )
 
-:: ── 4. Git ─────────────────────────────────────────
+:: --- 4. Git ---
 echo.
-echo ━━━  Git  ━━━
+echo --- Git ---
 git --version >nul 2>&1
 if %errorLevel% neq 0 (
-    echo   → Устанавливаем Git...
+    echo Installing Git...
     winget install Git.Git --silent --accept-package-agreements --accept-source-agreements
     set PATH=%ProgramFiles%\Git\cmd;%PATH%
-    echo   ✓  Git установлен
+    echo [OK] Git installed
 ) else (
-    echo   ✓  Git уже есть
+    echo [OK] Git already installed
 )
 
-:: ── 5. PostgreSQL 16 ───────────────────────────────
+:: --- 5. PostgreSQL 16 ---
 echo.
-echo ━━━  PostgreSQL 16  ━━━
+echo --- PostgreSQL 16 ---
 if exist "%ProgramFiles%\PostgreSQL\16\bin\psql.exe" (
-    echo   ✓  PostgreSQL 16 уже установлен
+    echo [OK] PostgreSQL 16 already installed
     set PG_BIN=%ProgramFiles%\PostgreSQL\16\bin
 ) else (
-    echo   → Скачиваем PostgreSQL 16...
-    set PG_INSTALLER=%TEMP%\pg16_install.exe
+    echo Downloading PostgreSQL 16 (~180 MB)...
     powershell -Command "Invoke-WebRequest -Uri 'https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64.exe' -OutFile '%TEMP%\pg16_install.exe'" 2>nul
     if not exist "%TEMP%\pg16_install.exe" (
-        echo   ОШИБКА: Не удалось скачать PostgreSQL
-        echo   Скачай вручную: https://postgresql.org/download/windows/
+        echo ERROR: Could not download PostgreSQL
+        echo Download manually: https://postgresql.org/download/windows/
         pause
         exit /b 1
     )
-    echo   → Устанавливаем PostgreSQL (займёт 2-3 минуты)...
+    echo Installing PostgreSQL (2-3 minutes)...
     "%TEMP%\pg16_install.exe" --mode unattended --unattendedmodeui minimal --superpassword "postgres" --servicename "postgresql-16" --servicepassword "postgres" --serverport 5432
     set PG_BIN=%ProgramFiles%\PostgreSQL\16\bin
-    echo   ✓  PostgreSQL установлен
+    echo [OK] PostgreSQL installed
 )
 set PATH=%PG_BIN%;%PATH%
 
-:: Запускаем сервис
-nет start "postgresql-16" >nul 2>&1
+:: Start service
+net start "postgresql-16" >nul 2>&1
 sc start "postgresql-16" >nul 2>&1
 timeout /t 3 /nobreak >nul
-echo   ✓  PostgreSQL запущен
+echo [OK] PostgreSQL running
 
-:: ── 6. Код проекта ─────────────────────────────────
+:: --- 6. Project code ---
 echo.
-echo ━━━  Marketing Dronor (код)  ━━━
+echo --- Marketing Dronor (code) ---
 if exist "%PROJECT%\.git" (
-    echo   → Обновляем до последней версии...
+    echo Updating to latest version...
     cd /d "%PROJECT%"
     git pull origin main
-    echo   ✓  Обновлён
+    echo [OK] Updated
 ) else (
-    echo   → Скачиваем код...
+    echo Downloading code...
     git clone https://github.com/AnvarBakiyev/marketing-dronor.git "%PROJECT%"
-    echo   ✓  Скачан в %PROJECT%
+    echo [OK] Downloaded to %PROJECT%
 )
 
-:: ── 7. Python-зависимости ──────────────────────────
+:: --- 7. Python dependencies ---
 echo.
-echo ━━━  Python-зависимости  ━━━
-:: Виртуальное окружение
+echo --- Python dependencies ---
 if not exist "%STATE%\venv\Scripts\python.exe" (
-    echo   → Создаём виртуальное окружение...
+    echo Creating virtual environment...
     python -m venv "%STATE%\venv"
-    echo   ✓  Создано
+    echo [OK] Created
 ) else (
-    echo   ✓  Виртуальное окружение уже есть
+    echo [OK] Virtual environment already exists
 )
 set PY="%STATE%\venv\Scripts\python.exe"
 set PIP="%STATE%\venv\Scripts\pip.exe"
 
-echo   → Устанавливаем пакеты (3 минуты)...
+echo Installing packages (~3 minutes)...
 %PIP% install --upgrade pip --quiet
 %PIP% install --quiet psycopg2-binary flask flask-cors anthropic python-dotenv loguru requests playwright pyotp
-echo   → Устанавливаем браузер Chromium...
+echo Installing Chromium browser...
 %PY% -m playwright install chromium
-echo   ✓  Все зависимости установлены
+echo [OK] All dependencies installed
 
-:: ── 8. База данных ─────────────────────────────────
+:: --- 8. Database ---
 echo.
-echo ━━━  База данных  ━━━
+echo --- Database ---
 set PGPASSWORD=postgres
 
 "%PG_BIN%\psql" -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='marketing_dronor'" 2>nul | findstr /C:"1" >nul
 if %errorLevel% neq 0 (
-    echo   → Создаём базу данных...
+    echo Creating database...
     "%PG_BIN%\psql" -U postgres -d postgres -c "CREATE DATABASE marketing_dronor;" >nul
-    echo   ✓  База создана
+    echo [OK] Database created
 ) else (
-    echo   ✓  База уже существует
+    echo [OK] Database already exists
 )
 
-echo   → Применяем схему...
+echo Applying schema...
 "%PG_BIN%\psql" -U postgres -d marketing_dronor -f "%PROJECT%\infra\db\schema.sql" >nul 2>&1
 for %%M in ("%PROJECT%\infra\db\0*.sql") do (
     "%PG_BIN%\psql" -U postgres -d marketing_dronor -f "%%M" >nul 2>&1
 )
-echo   ✓  Схема применена
+echo [OK] Schema applied
 
-:: ── 9. API-ключи (.env) ────────────────────────────
+:: --- 9. API keys (.env) ---
 echo.
-echo ━━━  Настройка API-ключей  ━━━
+echo --- API keys setup ---
 set ENV_FILE=%PROJECT%\.env
 if exist "%ENV_FILE%" (
-    echo   ✓  .env уже настроен — пропускаем
+    echo [OK] .env already configured
 ) else (
     echo.
-    echo   Введи API-ключи (Enter — пропустить, добавить позже в файл .env):
+    echo Enter your API keys (press Enter to skip, add later to .env file):
     echo.
-    set /p TW_KEY="  [1/3] TwitterAPI.io ключ (ta_...): "
-    set /p ANT_KEY="  [2/3] Anthropic API ключ (sk-ant-...): "
-    set /p CC_PASS="  [3/3] Пароль для Command Center UI: "
+    set /p TW_KEY="  [1/3] TwitterAPI.io key (ta_...): "
+    set /p ANT_KEY="  [2/3] Anthropic API key (sk-ant-...): "
+    set /p CC_PASS="  [3/3] Password for Command Center UI: "
     python -c "import secrets; print(secrets.token_hex(32))" > "%STATE%\secret.txt" 2>nul
     set /p SECRET=<"%STATE%\secret.txt"
     (
-        echo # Marketing Dronor — конфиг
         echo DB_HOST=localhost
         echo DB_PORT=5432
         echo DB_NAME=marketing_dronor
@@ -193,13 +188,13 @@ if exist "%ENV_FILE%" (
         echo LOG_LEVEL=INFO
         echo DRY_RUN=true
     ) > "%ENV_FILE%"
-    echo   ✓  .env создан
+    echo [OK] .env created
 )
 
-:: ── 10. Ярлык запуска ──────────────────────────────
+:: --- 10. Desktop shortcut ---
 echo.
-echo ━━━  Создаём ярлык запуска  ━━━
-set LAUNCH_BAT=%USERPROFILE%\Desktop\Запустить Marketing Dronor.bat
+echo --- Creating desktop shortcut ---
+set LAUNCH_BAT=%USERPROFILE%\Desktop\Start Marketing Dronor.bat
 (
     echo @echo off
     echo cd /d "%PROJECT%"
@@ -208,22 +203,22 @@ set LAUNCH_BAT=%USERPROFILE%\Desktop\Запустить Marketing Dronor.bat
     echo timeout /t 3 /nobreak ^>nul
     echo start http://localhost:8899
 ) > "%LAUNCH_BAT%"
-echo   ✓  Ярлык создан на рабочем столе
+echo [OK] Shortcut created on Desktop
 
-:: ── Готово ──────────────────────────────────────────
+:: --- Done ---
 echo.
-echo   ╔══════════════════════════════════════════════╗
-echo   ║      ✓  Установка завершена!                 ║
-echo   ╚══════════════════════════════════════════════╝
+echo   ============================================
+echo   Installation complete!
+echo   ============================================
 echo.
-echo   Что дальше:
+echo   Next steps:
 echo.
-echo   1. Установи GoLogin: https://gologin.com/download
-echo   2. Два раза кликни на рабочем столе:
-echo      'Запустить Marketing Dronor.bat'
-echo   3. Откроется браузер с Command Center
+echo   1. Install GoLogin: https://gologin.com/download
+echo   2. Double-click on Desktop:
+echo      "Start Marketing Dronor.bat"
+echo   3. Browser will open with Command Center
 echo.
-echo   Для изменения API-ключей: открой файл
+echo   To change API keys, edit:
 echo   %ENV_FILE%
 echo.
 pause
