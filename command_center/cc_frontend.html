@@ -1540,7 +1540,7 @@ kbd {
 </div>
 
 <script>
-const API = 'http://localhost:8899';
+const API = '';  // relative URL — works both locally and on Railway
 let AUTH_TOKEN = null;
 let currentUser = null;
 let currentProfile = null;
@@ -1602,7 +1602,7 @@ async function doLogin() {
       err.classList.add('show');
     }
   } catch(e) {
-    err.textContent = 'Cannot connect to backend (localhost:8899)';
+    err.textContent = 'Cannot connect to backend. Check your connection.';
     err.classList.add('show');
   }
 }
