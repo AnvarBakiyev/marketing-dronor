@@ -1336,5 +1336,7 @@ def jslog():
     print(f'[JSLOG] {msg}', flush=True)
     return jsonify({'ok': True})
 
-app.run(host='0.0.0.0', port=8899, debug=False, use_reloader=False)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8899))
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
