@@ -1588,7 +1588,9 @@ async function doLogin() {
     if (d.success) {
       AUTH_TOKEN = d.token;
       currentUser = d.user;
-      localStorage.setItem('cc_v3_session', JSON.stringify({token:d.token,operator:d.user}));
+      // DEBUG: log to backend
+      fetch(API+'/cc/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({msg: 'doLogin success, token=' + d.token.substring(0,10) + ' user=' + JSON.stringify(d.user)})}).catch(()=>{});
+      try { localStorage.setItem('cc_v3_session', JSON.stringify({token:d.token,user:d.user})); } catch(e) { fetch(API+'/cc/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({msg: 'localStorage FAILED: ' + e.toString()})}).catch(()=>{}); }
       document.getElementById('login-overlay').classList.add('hidden');
       document.getElementById('tb-operator').textContent = (currentUser && currentUser.name) ? currentUser.name.toUpperCase() : '';
       if (currentUser.role === 'admin') {
@@ -1612,7 +1614,9 @@ function doLogout() {
 }
 
 function restoreSession() {
+  fetch(API+'/cc/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({msg: 'restoreSession called'})}).catch(()=>{});
   const s = localStorage.getItem('cc_v3_session');
+  fetch(API+'/cc/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({msg: 'localStorage value: ' + (s ? s.substring(0,60) : 'NULL')})}).catch(()=>{});
   if (!s) return;
   const sess = JSON.parse(s);
   AUTH_TOKEN = sess.token;
@@ -2442,14 +2446,14 @@ async function loadAdmin() {
       return;
     }
     tbody.innerHTML = ops.map(o =>
-      '<tr>' +
-      '<td style="font-family:var(--mono);font-size:11px">' + o.name + '</td>' +
-      '<td><span style="font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px">' + o.role.toUpperCase() + '</span></td>' +
-      '<td style="font-family:var(--mono);font-size:11px;color:var(--accent)">' + (o.approved_count || 0) + '</td>' +
-      '<td style="font-family:var(--mono);font-size:11px">' + (o.sent_count || 0) + '</td>' +
-      '<td style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + (o.last_active ? o.last_active.slice(0,16) : 'never') + '</td>' +
-      '<td><button style="background:transparent;border:1px solid var(--border);color:#e74c3c;font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer" onclick="deleteOperator(' + o.id + ','' + o.name + '')" >DEL</button></td>' +
-      '</tr>'
+      `<tr>
+      <td style="font-family:var(--mono);font-size:11px">${o.name}</td>
+      <td><span style="font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px">${o.role.toUpperCase()}</span></td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${o.approved_count || 0}</td>
+      <td style="font-family:var(--mono);font-size:11px">${o.sent_count || 0}</td>
+      <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${o.last_active ? o.last_active.slice(0,16) : 'never'}</td>
+      <td><button style="background:transparent;border:1px solid var(--border);color:#e74c3c;font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer" onclick="deleteOperator(${o.id},'${o.name}')">DEL</button></td>
+      </tr>`
     ).join('');
   } catch(e) { console.log('Admin load error:', e); }
 }
