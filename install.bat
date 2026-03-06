@@ -24,7 +24,7 @@ echo --- Checking admin rights ---
 net session >nul 2>&1
 if %errorLevel% neq 0 (
     echo ERROR: Run as Administrator!
-    echo Right-click the file and choose "Run as administrator"
+    echo Right-click the file - Run as administrator
     pause
     exit /b 1
 )
@@ -35,7 +35,7 @@ echo.
 echo --- Package manager ---
 winget --version >nul 2>&1
 if %errorLevel% neq 0 (
-    echo Installing App Installer ^(winget^)...
+    echo Installing App Installer...
     start ms-appinstaller:
     echo Wait for installation to finish, then press any key
     pause
@@ -45,10 +45,11 @@ echo [OK] winget available
 :: --- 3. Python 3.11 ---
 echo.
 echo --- Python 3.11 ---
+set PYTHON_INSTALLED=0
 python --version >nul 2>&1
-if %errorLevel% equ 0 (
-    echo [OK] Python found
-) else (
+if %errorLevel% equ 0 set PYTHON_INSTALLED=1
+
+if %PYTHON_INSTALLED% equ 0 (
     echo Installing Python 3.11...
     winget install Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
     if !errorLevel! neq 0 (
@@ -58,30 +59,40 @@ if %errorLevel% equ 0 (
         exit /b 1
     )
     echo [OK] Python installed
-    set PATH=%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts;%PATH%
 )
+if %PYTHON_INSTALLED% equ 1 echo [OK] Python found
+
+:: Update PATH for Python - outside if-block to avoid PATH expansion issues
+set PATH=%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts;%PATH%
 
 :: --- 4. Git ---
 echo.
 echo --- Git ---
+set GIT_INSTALLED=0
 git --version >nul 2>&1
-if %errorLevel% neq 0 (
+if %errorLevel% equ 0 set GIT_INSTALLED=1
+
+if %GIT_INSTALLED% equ 0 (
     echo Installing Git...
     winget install Git.Git --silent --accept-package-agreements --accept-source-agreements
-    set PATH=%ProgramFiles%\Git\cmd;%PATH%
     echo [OK] Git installed
-) else (
-    echo [OK] Git already installed
 )
+if %GIT_INSTALLED% equ 1 echo [OK] Git already installed
+
+:: Update PATH for Git - outside if-block
+set PATH=%ProgramFiles%\Git\cmd;%PATH%
 
 :: --- 5. PostgreSQL 16 ---
 echo.
 echo --- PostgreSQL 16 ---
-if exist "%ProgramFiles%\PostgreSQL\16\bin\psql.exe" (
-    echo [OK] PostgreSQL 16 already installed
-    set PG_BIN=%ProgramFiles%\PostgreSQL\16\bin
-) else (
-    echo Downloading PostgreSQL 16 (~180 MB)...
+set PG_BIN=%ProgramFiles%\PostgreSQL\16\bin
+set PG_INSTALLED=0
+if exist "%PG_BIN%\psql.exe" set PG_INSTALLED=1
+
+if %PG_INSTALLED% equ 1 echo [OK] PostgreSQL 16 already installed
+
+if %PG_INSTALLED% equ 0 (
+    echo Downloading PostgreSQL 16...
     powershell -Command "Invoke-WebRequest -Uri 'https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64.exe' -OutFile '%TEMP%\pg16_install.exe'" 2>nul
     if not exist "%TEMP%\pg16_install.exe" (
         echo ERROR: Could not download PostgreSQL
@@ -89,11 +100,12 @@ if exist "%ProgramFiles%\PostgreSQL\16\bin\psql.exe" (
         pause
         exit /b 1
     )
-    echo Installing PostgreSQL ^(2-3 minutes^)...
+    echo Installing PostgreSQL...
     "%TEMP%\pg16_install.exe" --mode unattended --unattendedmodeui minimal --superpassword "postgres" --servicename "postgresql-16" --servicepassword "postgres" --serverport 5432
-    set PG_BIN=%ProgramFiles%\PostgreSQL\16\bin
     echo [OK] PostgreSQL installed
 )
+
+:: Update PATH for PostgreSQL - outside if-block
 set PATH=%PG_BIN%;%PATH%
 
 :: Start service
@@ -105,33 +117,40 @@ echo [OK] PostgreSQL running
 :: --- 6. Project code ---
 echo.
 echo --- Marketing Dronor (code) ---
-if exist "%PROJECT%\.git" (
+set CODE_EXISTS=0
+if exist "%PROJECT%\.git" set CODE_EXISTS=1
+
+if %CODE_EXISTS% equ 1 (
     echo Updating to latest version...
     cd /d "%PROJECT%"
     git pull origin main
     echo [OK] Updated
-) else (
+)
+if %CODE_EXISTS% equ 0 (
     echo Downloading code...
     git clone https://github.com/AnvarBakiyev/marketing-dronor.git "%PROJECT%"
-    echo [OK] Downloaded to %PROJECT%
+    echo [OK] Downloaded
 )
 
 :: --- 7. Python dependencies ---
 echo.
 echo --- Python dependencies ---
-if not exist "%STATE%\venv\Scripts\python.exe" (
+set VENV_EXISTS=0
+if exist "%STATE%\venv\Scripts\python.exe" set VENV_EXISTS=1
+
+if %VENV_EXISTS% equ 0 (
     echo Creating virtual environment...
     python -m venv "%STATE%\venv"
     echo [OK] Created
-) else (
-    echo [OK] Virtual environment already exists
 )
+if %VENV_EXISTS% equ 1 echo [OK] Virtual environment already exists
+
 set PY="%STATE%\venv\Scripts\python.exe"
 set PIP="%STATE%\venv\Scripts\pip.exe"
 
-echo Installing packages (~3 minutes)...
-%PIP% install --upgrade pip --quiet
-%PIP% install --quiet psycopg2-binary flask flask-cors anthropic python-dotenv loguru requests playwright pyotp
+echo Installing packages...
+%PY% -m pip install --upgrade pip --quiet
+%PY% -m pip install --quiet psycopg2-binary flask flask-cors anthropic python-dotenv loguru requests playwright pyotp
 echo Installing Chromium browser...
 %PY% -m playwright install chromium
 echo [OK] All dependencies installed
@@ -142,13 +161,14 @@ echo --- Database ---
 set PGPASSWORD=postgres
 
 "%PG_BIN%\psql" -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='marketing_dronor'" 2>nul | findstr /C:"1" >nul
-if %errorLevel% neq 0 (
+set DB_EXISTS=%errorLevel%
+
+if %DB_EXISTS% neq 0 (
     echo Creating database...
     "%PG_BIN%\psql" -U postgres -d postgres -c "CREATE DATABASE marketing_dronor;" >nul
     echo [OK] Database created
-) else (
-    echo [OK] Database already exists
 )
+if %DB_EXISTS% equ 0 echo [OK] Database already exists
 
 echo Applying schema...
 "%PG_BIN%\psql" -U postgres -d marketing_dronor -f "%PROJECT%\infra\db\schema.sql" >nul 2>&1
@@ -161,11 +181,14 @@ echo [OK] Schema applied
 echo.
 echo --- API keys setup ---
 set ENV_FILE=%PROJECT%\.env
-if exist "%ENV_FILE%" (
-    echo [OK] .env already configured
-) else (
+set ENV_EXISTS=0
+if exist "%ENV_FILE%" set ENV_EXISTS=1
+
+if %ENV_EXISTS% equ 1 echo [OK] .env already configured
+
+if %ENV_EXISTS% equ 0 (
     echo.
-    echo Enter your API keys ^(press Enter to skip, add later to .env file^):
+    echo Enter your API keys - press Enter to skip, add later to .env file:
     echo.
     set /p TW_KEY="  [1/3] TwitterAPI.io key (ta_...): "
     set /p ANT_KEY="  [2/3] Anthropic API key (sk-ant-...): "
@@ -214,11 +237,9 @@ echo.
 echo   Next steps:
 echo.
 echo   1. Install GoLogin: https://gologin.com/download
-echo   2. Double-click on Desktop:
-echo      "Start Marketing Dronor.bat"
+echo   2. Double-click on Desktop: Start Marketing Dronor.bat
 echo   3. Browser will open with Command Center
 echo.
-echo   To change API keys, edit:
-echo   %ENV_FILE%
+echo   To change API keys, edit: %ENV_FILE%
 echo.
 pause
