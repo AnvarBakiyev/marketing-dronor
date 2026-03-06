@@ -136,7 +136,7 @@ def setup_check():
     """Check if initial admin setup is needed."""
     db = get_db()
     try:
-        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
         row = cursor.fetchone()
         return jsonify({'setup_done': row['cnt'] > 0})
     except:
@@ -171,7 +171,7 @@ def setup():
     db = get_db()
     try:
         # Check if admin already exists
-        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
         if cursor.fetchone()['cnt'] > 0:
             return jsonify({'success': False, 'error': 'Admin already exists'})
         
@@ -1123,7 +1123,7 @@ def delete_operator(id):
         cursor = db.execute('SELECT role FROM operators WHERE id = ?', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+            cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
