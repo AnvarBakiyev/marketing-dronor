@@ -78,7 +78,7 @@ def get_db():
         import psycopg2
         import psycopg2.extras
         url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-        conn = psycopg2.connect(url)
+        conn = psycopg2.connect(url, connect_timeout=10)
         return _PgConnWrapper(conn)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
