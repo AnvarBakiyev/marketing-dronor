@@ -2671,7 +2671,7 @@ async function loadProfiles(page = 1) {
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">Loading...</td></tr>';
 
   try {
-    const r = await apiFetch('/cc/v2/profiles?' + params);
+    const r = await api('/cc/v2/profiles?' + params);
     profilesTotal = r.total;
     document.getElementById('profiles-count').textContent =
       `${r.total.toLocaleString()} profiles — page ${r.page}/${r.pages}`;
@@ -2736,7 +2736,7 @@ async function loadSendActivity() {
   const tbody = document.getElementById('sendactivity-tbody');
   if (!tbody) return;
   try {
-    const jobs = await apiFetch('/cc/v2/send-jobs');
+    const jobs = await api('/cc/v2/send-jobs');
     document.getElementById('nb-sendactivity').textContent = jobs.length;
 
     const sent     = jobs.filter(j => j.status === 'sent').length;
