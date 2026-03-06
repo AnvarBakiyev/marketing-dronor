@@ -2673,6 +2673,10 @@ async function loadProfiles(page) {
 
   try {
     var r = await api('/cc/v2/profiles?' + qs);
+    if (!r || r.error || r.total === undefined) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#f87171">Error: ' + (r && r.error ? r.error : 'Failed to load profiles') + '</td></tr>';
+      return;
+    }
     profilesTotal = r.total;
     var countEl = document.getElementById('profiles-count');
     if (countEl) countEl.textContent = r.total.toLocaleString() + ' profiles \u2014 page ' + r.page + '/' + r.pages;
@@ -2742,6 +2746,10 @@ async function loadSendActivity() {
   if (!tbody) return;
   try {
     const jobs = await api('/cc/v2/send-jobs');
+    if (!jobs || jobs.error || !Array.isArray(jobs)) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:#f87171">Error: ' + (jobs && jobs.error ? jobs.error : 'Failed to load jobs') + '</td></tr>';
+      return;
+    }
     document.getElementById('nb-sendactivity').textContent = jobs.length;
 
     const sent   = jobs.filter(j => j.status === 'sent').length;
