@@ -1485,8 +1485,45 @@ kbd {
     </div>
     <!-- ── ADMIN TAB ── -->
     <div class="tab-content admin-only" id="tab-admin">
-      <div style="padding:20px">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">Admin panel — coming soon</div>
+      <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+
+        <!-- Operators -->
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--text2)">OPERATORS</span>
+            <button class="run-btn" onclick="showAddOperator()">+ ADD OPERATOR</button>
+          </div>
+          <table><thead><tr><th>NAME</th><th>ROLE</th><th>APPROVED</th><th>SENT</th><th>LAST ACTIVE</th><th></th></tr></thead>
+          <tbody id="admin-operators-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text3);font-family:var(--mono);padding:20px;font-size:10px">Loading...</td></tr></tbody></table>
+        </div>
+
+        <!-- API Keys -->
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+            <span style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--text2)">API KEYS</span>
+          </div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:var(--mono);font-size:10px;color:var(--text3);width:160px">TWITTERAPI.IO KEY</span>
+              <input id="ak-twitter" type="password" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:4px" placeholder="ta_...">
+              <button class="run-btn" style="background:var(--bg4);border:1px solid var(--border);color:var(--text2)" onclick="saveApiKey('TWITTERAPI_IO_KEY','ak-twitter')">SAVE</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:var(--mono);font-size:10px;color:var(--text3);width:160px">ANTHROPIC KEY</span>
+              <input id="ak-anthropic" type="password" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:4px" placeholder="sk-ant-...">
+              <button class="run-btn" style="background:var(--bg4);border:1px solid var(--border);color:var(--text2)" onclick="saveApiKey('ANTHROPIC_API_KEY','ak-anthropic')">SAVE</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:var(--mono);font-size:10px;color:var(--text3);width:160px">DRY RUN MODE</span>
+              <select id="ak-dryrun" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:4px">
+                <option value="true">ON (safe, no real sends)</option>
+                <option value="false">OFF (live mode)</option>
+              </select>
+              <button class="run-btn" style="background:var(--bg4);border:1px solid var(--border);color:var(--text2)" onclick="saveApiKey('DRY_RUN','ak-dryrun')">SAVE</button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -2199,6 +2236,8 @@ function switchTab(tab, el) {
   if (tab === 'accounts')      loadAccounts();
   if (tab === 'conversations') loadConversations();
   if (tab === 'proxies')       loadProxies();
+  if (tab === 'pipeline')      renderModules();
+  if (tab === 'admin')         loadAdmin();
 }
 
 // ── DEMO DATA (offline) ──
@@ -2355,6 +2394,146 @@ async function checkAllProxies() {
   document.getElementById('proxy-stats').textContent = d.message || 'Checking...';
 }
 
+
+// ── ADD ACCOUNT ──
+function showAddAccount() {
+  document.getElementById('modal-add-account').style.display = 'flex';
+  document.getElementById('aa-handle').value = '';
+  document.getElementById('aa-gologin').value = '';
+  document.getElementById('aa-limit').value = '25';
+  document.getElementById('aa-proxy').value = '';
+  document.getElementById('aa-error').style.display = 'none';
+}
+function hideAddAccount() {
+  document.getElementById('modal-add-account').style.display = 'none';
+}
+async function submitAddAccount() {
+  const handle  = document.getElementById('aa-handle').value.trim().replace('@','');
+  const gologin = document.getElementById('aa-gologin').value.trim();
+  const limit   = parseInt(document.getElementById('aa-limit').value) || 25;
+  const proxy   = document.getElementById('aa-proxy').value.trim();
+  const err     = document.getElementById('aa-error');
+  if (!handle) { err.textContent = 'Handle is required'; err.style.display='block'; return; }
+  const body = { twitter_username: handle, gologin_profile_id: gologin, daily_limit: limit };
+  if (proxy) body.proxy_id = parseInt(proxy);
+  const d = await api('/cc/accounts', { method: 'POST', body: JSON.stringify(body) });
+  if (d && d.success) { hideAddAccount(); loadAccounts(); }
+  else { err.textContent = (d && d.error) || 'Error adding account'; err.style.display='block'; }
+}
+
+// ── ADMIN ──
+async function loadAdmin() {
+  try {
+    const d = await api('/cc/admin');
+    if (!d) return;
+    const tbody = document.getElementById('admin-operators-tbody');
+    const ops = d.operators || [];
+    if (!ops.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);font-family:var(--mono);padding:20px;font-size:10px">No operators yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = ops.map(o =>
+      '<tr>' +
+      '<td style="font-family:var(--mono);font-size:11px">' + o.name + '</td>' +
+      '<td><span style="font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px">' + o.role.toUpperCase() + '</span></td>' +
+      '<td style="font-family:var(--mono);font-size:11px;color:var(--accent)">' + (o.approved_count || 0) + '</td>' +
+      '<td style="font-family:var(--mono);font-size:11px">' + (o.sent_count || 0) + '</td>' +
+      '<td style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + (o.last_active ? o.last_active.slice(0,16) : 'never') + '</td>' +
+      '<td><button style="background:transparent;border:1px solid var(--border);color:#e74c3c;font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer" onclick="deleteOperator(' + o.id + ','' + o.name + '')" >DEL</button></td>' +
+      '</tr>'
+    ).join('');
+  } catch(e) { console.log('Admin load error:', e); }
+}
+
+function showAddOperator() {
+  document.getElementById('modal-add-operator').style.display = 'flex';
+  document.getElementById('ao-name').value = '';
+  document.getElementById('ao-pin').value = '';
+  document.getElementById('ao-error').style.display = 'none';
+}
+async function submitAddOperator() {
+  const name = document.getElementById('ao-name').value.trim();
+  const pin  = document.getElementById('ao-pin').value.trim();
+  const role = document.getElementById('ao-role').value;
+  const err  = document.getElementById('ao-error');
+  if (!name || pin.length < 4) { err.textContent = 'Name required, PIN min 4 chars'; err.style.display='block'; return; }
+  const d = await api('/cc/operators', { method: 'POST', body: JSON.stringify({name: name, pin: pin, role: role}) });
+  if (d && d.success) { document.getElementById('modal-add-operator').style.display='none'; loadAdmin(); }
+  else { err.textContent = (d && d.error) || 'Error'; err.style.display='block'; }
+}
+async function deleteOperator(id, name) {
+  if (!confirm('Delete operator ' + name + '?')) return;
+  await api('/cc/operators/' + id, { method: 'DELETE' });
+  loadAdmin();
+}
+
+// ── API KEYS ──
+async function saveApiKey(envKey, inputId) {
+  const val = document.getElementById(inputId).value.trim();
+  if (!val) return;
+  const d = await api('/cc/settings', { method: 'POST', body: JSON.stringify({key: envKey, value: val}) });
+  if (d && d.success) {
+    const btn = document.getElementById('btn-' + inputId);
+    if (btn) { const orig = btn.textContent; btn.textContent = 'SAVED'; setTimeout(function(){ btn.textContent = orig; }, 2000); }
+  }
+}
 </script>
+
+<!-- ADD ACCOUNT MODAL -->
+<div id="modal-add-account" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px;width:380px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--text2)">ADD TWITTER ACCOUNT</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">TWITTER HANDLE (without @)</label>
+      <input id="aa-handle" type="text" placeholder="dronor_builds" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">GOLOGIN PROFILE ID</label>
+      <input id="aa-gologin" type="text" placeholder="abc123..." style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+    </div>
+    <div style="display:flex;gap:10px">
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">DAILY LIMIT</label>
+        <input id="aa-limit" type="number" value="25" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">PROXY ID (optional)</label>
+        <input id="aa-proxy" type="number" placeholder="—" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+      </div>
+    </div>
+    <div id="aa-error" style="font-family:var(--mono);font-size:10px;color:#e74c3c;display:none"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="run-btn" style="flex:1" onclick="submitAddAccount()">+ ADD</button>
+      <button class="run-btn" style="background:var(--bg4);border:1px solid var(--border);color:var(--text2)" onclick="hideAddAccount()">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD OPERATOR MODAL -->
+<div id="modal-add-operator" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px;width:340px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--text2)">ADD OPERATOR</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">NAME</label>
+      <input id="ao-name" type="text" placeholder="operator_name" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">PIN (min 4 digits)</label>
+      <input id="ao-pin" type="password" placeholder="••••" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-family:var(--mono);font-size:9px;color:var(--text3)">ROLE</label>
+      <select id="ao-role" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px">
+        <option value="operator">Operator</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div id="ao-error" style="font-family:var(--mono);font-size:10px;color:#e74c3c;display:none"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="run-btn" style="flex:1" onclick="submitAddOperator()">+ ADD</button>
+      <button class="run-btn" style="background:var(--bg4);border:1px solid var(--border);color:var(--text2)" onclick="document.getElementById('modal-add-operator').style.display='none'">CANCEL</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
