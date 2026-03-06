@@ -35,7 +35,7 @@ echo.
 echo --- Package manager ---
 winget --version >nul 2>&1
 if %errorLevel% neq 0 (
-    echo Installing App Installer (winget)...
+    echo Installing App Installer ^(winget^)...
     start ms-appinstaller:
     echo Wait for installation to finish, then press any key
     pause
@@ -89,7 +89,7 @@ if exist "%ProgramFiles%\PostgreSQL\16\bin\psql.exe" (
         pause
         exit /b 1
     )
-    echo Installing PostgreSQL (2-3 minutes)...
+    echo Installing PostgreSQL ^(2-3 minutes^)...
     "%TEMP%\pg16_install.exe" --mode unattended --unattendedmodeui minimal --superpassword "postgres" --servicename "postgresql-16" --servicepassword "postgres" --serverport 5432
     set PG_BIN=%ProgramFiles%\PostgreSQL\16\bin
     echo [OK] PostgreSQL installed
@@ -165,7 +165,7 @@ if exist "%ENV_FILE%" (
     echo [OK] .env already configured
 ) else (
     echo.
-    echo Enter your API keys (press Enter to skip, add later to .env file):
+    echo Enter your API keys ^(press Enter to skip, add later to .env file^):
     echo.
     set /p TW_KEY="  [1/3] TwitterAPI.io key (ta_...): "
     set /p ANT_KEY="  [2/3] Anthropic API key (sk-ant-...): "
