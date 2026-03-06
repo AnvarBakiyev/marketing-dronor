@@ -10,17 +10,28 @@
 
 ### Mac
 
-1. Открой Terminal
-2. Вставь команду и нажми Enter:
+1. Скачай файл установщика:
+   👉 https://github.com/AnvarBakiyev/marketing-dronor/raw/main/install.sh
+
+2. Открой Terminal (Finder → Программы → Утилиты → Terminal)
+
+3. Введи команду и нажми Enter:
    ```
-   bash ~/MarketingDronor/install.sh
+   bash ~/Downloads/install.sh
    ```
-3. Следуй подсказкам (~10 мин)
+
+4. Следуй подсказкам (~10 мин)
 
 ### Windows
 
-1. Правая кнопка на `install.bat` → **Запуск от имени администратора**
-2. Следуй подсказкам (~15 мин)
+1. Скачай файл установщика:
+   👉 https://github.com/AnvarBakiyev/marketing-dronor/raw/main/install.bat
+
+2. Найди скачанный файл `install.bat`
+
+3. Правая кнопка мыши → **Запуск от имени администратора**
+
+4. Следуй подсказкам (~15 мин)
 
 ### Что устанавливается автоматически
 

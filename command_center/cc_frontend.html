@@ -1763,6 +1763,7 @@ function renderQueue() {
           <div class="q-handle">@${item.target_handle || item.twitter_username || ''} · ${item.role || item.bio?.slice(0,20) || ''}</div>
         </div>
         <span class="tier-badge tier-${tier.toLowerCase()}">${tier}</span>
+        ${item.is_locked_by_other ? `<span style="font-family:var(--mono);font-size:8px;color:#e74c3c;border:1px solid #e74c3c;padding:1px 4px;border-radius:2px;margin-left:4px">🔒 ${item.locked_by}</span>` : ''}
       </div>
       <div class="q-preview">${item.reasoning || item.signal || item.message_text?.slice(0,100) || 'No preview'}</div>
       <div class="q-meta">
@@ -1775,10 +1776,18 @@ function renderQueue() {
 }
 
 function selectProfile(idx) {
+  // Unlock previous item if different
+  if (currentProfile && currentProfile.id && currentProfile !== queueData[idx]) {
+    api('/cc/queue/' + currentProfile.id + '/unlock', {method:'POST', body:'{}'}).catch(()=>{});
+  }
   currentProfile = queueData[idx];
   document.querySelectorAll('.q-item').forEach((el,i) => el.classList.toggle('active', i===idx));
   document.getElementById('rp-position').textContent = `${idx+1} / ${queueData.length}`;
   renderProfilePanel(currentProfile);
+  // Lock new item (MKT-82)
+  if (currentProfile && currentProfile.id) {
+    api('/cc/queue/' + currentProfile.id + '/lock', {method:'POST', body:'{}'}).catch(()=>{});
+  }
 }
 
 function renderProfilePanel(p) {
@@ -2174,9 +2183,9 @@ function renderOps(ops) {
       <tbody>
         ${ops.map(o => `<tr>
           <td class="acc-handle">${o.name}</td>
-          <td style="color:var(--accent)">${o.reviewed||0}</td>
+          <td style="color:var(--accent)">${o.approved||0}</td>
           <td style="color:var(--green)">${o.sent||0}</td>
-          <td style="color:var(--text3)">${o.skipped||0}</td>
+          <td style="color:var(--text3)">—</td>
         </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text3);font-size:10px;text-align:center;padding:16px">No operator data</td></tr>'}
       </tbody>
     </table>

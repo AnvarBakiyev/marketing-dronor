@@ -405,19 +405,48 @@ def get_queue():
                 message_text TEXT NOT NULL,
                 tier TEXT DEFAULT 'B',
                 category TEXT,
+                outreach_type TEXT DEFAULT 'dm',
+                thread_context TEXT,
+                tweet_url TEXT,
                 status TEXT DEFAULT 'pending',
                 reviewed_by TEXT,
                 reviewed_at TEXT,
                 sent_at TEXT,
+                locked_by TEXT,
+                locked_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
+            -- Auto-add lock columns if upgrading from old schema
+            
         ''')
         db.commit()
         
-        cursor = db.execute('''
-            SELECT * FROM dm_queue WHERE status = ?
-            ORDER BY created_at DESC LIMIT 100
-        ''', (status,))
+        # MKT-82: Release expired locks (older than 5 min)
+        db.execute("""UPDATE dm_queue
+            SET locked_by = NULL, locked_at = NULL
+            WHERE locked_at IS NOT NULL
+            AND datetime(locked_at) < datetime('now', '-5 minutes')""")
+        db.commit()
+
+        # Add lock columns if missing (schema upgrade)
+        try:
+            db.execute('ALTER TABLE dm_queue ADD COLUMN locked_by TEXT')
+            db.execute('ALTER TABLE dm_queue ADD COLUMN locked_at TEXT')
+            db.execute('ALTER TABLE dm_queue ADD COLUMN outreach_type TEXT DEFAULT "dm"')
+            db.execute('ALTER TABLE dm_queue ADD COLUMN thread_context TEXT')
+            db.execute('ALTER TABLE dm_queue ADD COLUMN tweet_url TEXT')
+            db.commit()
+        except Exception:
+            pass  # Columns already exist
+
+        operator = request.args.get('operator', '')
+        cursor = db.execute("""SELECT *,
+            CASE WHEN locked_by IS NOT NULL AND locked_by != ? THEN 1 ELSE 0 END as is_locked_by_other
+            FROM dm_queue WHERE status = ?
+            ORDER BY
+                CASE tier WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 ELSE 4 END,
+                created_at DESC
+            LIMIT 100""", (operator, status))
         items = [dict(row) for row in cursor.fetchall()]
         return jsonify({'items': items})
     finally:
@@ -428,15 +457,20 @@ def queue_action(id, action):
     """Perform action on queue item (approve/reject/send)."""
     db = get_db()
     try:
+        # Get operator from session
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        user = SESSIONS.get(token, {})
+        operator_name = user.get('name', 'unknown')
+
         if action == 'approve':
             db.execute(
-                'UPDATE dm_queue SET status = "approved", reviewed_at = ? WHERE id = ?',
-                (datetime.now().isoformat(), id)
+                'UPDATE dm_queue SET status = "approved", reviewed_by = ?, reviewed_at = ?, locked_by = NULL, locked_at = NULL WHERE id = ?',
+                (operator_name, datetime.now().isoformat(), id)
             )
         elif action == 'reject':
             db.execute(
-                'UPDATE dm_queue SET status = "rejected", reviewed_at = ? WHERE id = ?',
-                (datetime.now().isoformat(), id)
+                'UPDATE dm_queue SET status = "rejected", reviewed_by = ?, reviewed_at = ?, locked_by = NULL, locked_at = NULL WHERE id = ?',
+                (operator_name, datetime.now().isoformat(), id)
             )
         elif action == 'send':
             # Mark as ready to send
@@ -444,6 +478,49 @@ def queue_action(id, action):
                 'UPDATE dm_queue SET status = "ready_to_send" WHERE id = ?',
                 (id,)
             )
+        db.commit()
+        return jsonify({'success': True})
+    finally:
+        db.close()
+
+
+@app.route('/cc/queue/<id>/lock', methods=['POST'])
+def lock_queue_item(id):
+    """Lock queue item for operator (MKT-82)."""
+    data = request.get_json() or {}
+    operator = data.get('operator', '')
+    if not operator:
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        user = SESSIONS.get(token)
+        operator = user['name'] if user else 'unknown'
+
+    db = get_db()
+    try:
+        # Check if already locked by someone else
+        row = db.execute('SELECT locked_by, locked_at FROM dm_queue WHERE id = ?', (id,)).fetchone()
+        if row and row['locked_by'] and row['locked_by'] != operator:
+            # Check if lock expired
+            if row['locked_at']:
+                from datetime import datetime as dt
+                locked_dt = dt.fromisoformat(row['locked_at'])
+                if (dt.now() - locked_dt).total_seconds() < 300:
+                    return jsonify({'success': False, 'locked_by': row['locked_by']})
+
+        db.execute(
+            'UPDATE dm_queue SET locked_by = ?, locked_at = ? WHERE id = ?',
+            (operator, datetime.now().isoformat(), id)
+        )
+        db.commit()
+        return jsonify({'success': True, 'locked_by': operator})
+    finally:
+        db.close()
+
+@app.route('/cc/queue/<id>/unlock', methods=['POST'])
+def unlock_queue_item(id):
+    """Release lock on queue item (MKT-82)."""
+    db = get_db()
+    try:
+        db.execute('UPDATE dm_queue SET locked_by = NULL, locked_at = NULL WHERE id = ?', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:

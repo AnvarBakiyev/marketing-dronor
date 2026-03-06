@@ -13,9 +13,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import requests
 from infra.db import get_connection, execute_query
 try:
+    from infra.config import TWITTERAPI_IO_KEY
+except ImportError:
+    TWITTERAPI_IO_KEY = None
+try:
     from infra.config import TWITTER_BEARER_TOKEN
 except ImportError:
-    raise RuntimeError("infra/config.py missing TWITTER_BEARER_TOKEN")
+    TWITTER_BEARER_TOKEN = None
+from infra.twitterapi_io_client import TwitterAPIioClient
 
 log = logging.getLogger(__name__)
 
@@ -118,46 +123,49 @@ def tweet_finder(
 # Twitter API
 # ---------------------------------------------------------------------------
 def _search_user_tweets(username: str, keywords: list[str]) -> list[dict]:
-    """Search recent tweets from user matching keywords."""
-    # Build query: from:username + any keyword
-    keyword_query = " OR ".join(keywords[:5])  # Limit to 5 keywords
-    query = f"from:{username} ({keyword_query})"
-    
-    url = f"{TWITTER_API_BASE}/tweets/search/recent"
-    params = {
-        "query": query,
-        "max_results": MAX_TWEETS_PER_USER,
-        "tweet.fields": "created_at,public_metrics,author_id",
-    }
-    headers = {
-        "Authorization": f"Bearer {TWITTER_BEARER_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    response = requests.get(url, params=params, headers=headers, timeout=30)
-    
-    if response.status_code == 429:
-        log.warning("Twitter API rate limited")
+    """Search recent tweets from user matching keywords via TwitterAPI.io (MKT-81)."""
+    if not TWITTERAPI_IO_KEY:
+        log.warning("TWITTERAPI_IO_KEY not configured, skipping tweet search")
         return []
     
-    if response.status_code != 200:
-        log.error(f"Twitter API error: {response.status_code} - {response.text[:200]}")
+    try:
+        client = TwitterAPIioClient(TWITTERAPI_IO_KEY)
+        
+        # Step 1: get user_id from username
+        user_data = client.get_user_by_username(username)
+        if not user_data:
+            log.info(f"User @{username} not found")
+            return []
+        user_id = user_data.get("id")
+        if not user_id:
+            return []
+        
+        # Step 2: get recent tweets
+        result = client.get_user_tweets(user_id, max_results=MAX_TWEETS_PER_USER)
+        tweets_raw = result.get("data", [])
+        
+        # Step 3: filter by keywords
+        kw_set = set(keywords[:5])
+        matched = []
+        for t in tweets_raw:
+            text_lower = t.get("text", "").lower()
+            if any(k in text_lower for k in kw_set):
+                matched.append(t)
+        
+        return [
+            {
+                "id": t["id"],
+                "text": t.get("text", ""),
+                "created_at": t.get("created_at"),
+                "likes": t.get("public_metrics", {}).get("like_count", 0) if isinstance(t.get("public_metrics"), dict) else 0,
+                "replies": t.get("public_metrics", {}).get("reply_count", 0) if isinstance(t.get("public_metrics"), dict) else 0,
+                "retweets": t.get("public_metrics", {}).get("retweet_count", 0) if isinstance(t.get("public_metrics"), dict) else 0,
+            }
+            for t in matched
+        ]
+    except Exception as e:
+        log.error(f"TwitterAPI.io error for @{username}: {e}")
         return []
-    
-    data = response.json()
-    tweets = data.get("data", [])
-    
-    return [
-        {
-            "id": t["id"],
-            "text": t["text"],
-            "created_at": t.get("created_at"),
-            "likes": t.get("public_metrics", {}).get("like_count", 0),
-            "replies": t.get("public_metrics", {}).get("reply_count", 0),
-            "retweets": t.get("public_metrics", {}).get("retweet_count", 0),
-        }
-        for t in tweets
-    ]
 
 
 # ---------------------------------------------------------------------------
