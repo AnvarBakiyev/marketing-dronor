@@ -1194,10 +1194,10 @@ kbd {
     <div class="login-error" id="login-error"></div>
     <div id="login-form">
       <div class="login-field-label">Operator name</div>
-      <input class="login-input" id="login-name" placeholder="your_name" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pin').focus()">
+      <input class="login-input" id="login-name" placeholder="your_name" autocomplete="username">
       <div class="login-field-label">PIN</div>
-      <input class="login-input" id="login-pin" type="password" placeholder="••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-      <button class="login-btn" onclick="doLogin()">ENTER →</button>
+      <input class="login-input" id="login-pin" type="password" placeholder="••••" autocomplete="current-password" >
+      <button class="login-btn" id="login-submit-btn">ENTER →</button>
     </div>
     <div id="setup-form" style="display:none">
       <div class="login-setup-hint">⚡ First launch — create your admin account</div>
@@ -1205,7 +1205,7 @@ kbd {
       <input class="login-input" id="setup-name" placeholder="admin">
       <div class="login-field-label">PIN (min 4 chars)</div>
       <input class="login-input" id="setup-pin" type="password" placeholder="••••">
-      <button class="login-btn" onclick="doSetup()">CREATE ADMIN →</button>
+      <button class="login-btn" id="setup-submit-btn">CREATE ADMIN →</button>
     </div>
   </div>
 </div>
@@ -2546,17 +2546,25 @@ async function saveApiKey(envKey, inputId) {
 </div>
 
 <script>
-// Global Enter key handler for login form (pywebview fallback)
-document.addEventListener('keydown', function(e) {
-  if (e.key !== 'Enter') return;
-  const overlay = document.getElementById('login-overlay');
-  if (!overlay || overlay.classList.contains('hidden')) return;
-  const active = document.activeElement;
-  if (active && active.id === 'login-name') {
-    document.getElementById('login-pin').focus();
-  } else {
-    doLogin();
-  }
+// Login form event handlers — attached via addEventListener for pywebview compatibility
+window.addEventListener('DOMContentLoaded', function() {
+  var btnLogin = document.getElementById('login-submit-btn');
+  if (btnLogin) btnLogin.addEventListener('click', function() { doLogin(); });
+
+  var btnSetup = document.getElementById('setup-submit-btn');
+  if (btnSetup) btnSetup.addEventListener('click', function() { doSetup(); });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var overlay = document.getElementById('login-overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    var active = document.activeElement;
+    if (active && active.id === 'login-name') {
+      document.getElementById('login-pin').focus();
+    } else {
+      doLogin();
+    }
+  });
 });
 </script>
 </body>
