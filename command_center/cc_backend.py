@@ -1277,5 +1277,13 @@ if __name__ == '__main__':
     print(f"📁 Database: {DB_PATH}")
     print("\nPress Ctrl+C to stop\n")
     
-    app.run(host='0.0.0.0', port=8899, debug=False, use_reloader=False)
+    
+@app.route('/cc/jslog', methods=['POST'])
+def jslog():
+    data = request.get_json(silent=True) or {}
+    msg = data.get('msg', '')
+    print(f'[JSLOG] {msg}', flush=True)
+    return jsonify({'ok': True})
+
+app.run(host='0.0.0.0', port=8899, debug=False, use_reloader=False)
 
