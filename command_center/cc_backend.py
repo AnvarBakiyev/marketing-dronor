@@ -1336,6 +1336,272 @@ def jslog():
     print(f'[JSLOG] {msg}', flush=True)
     return jsonify({'ok': True})
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POSTGRESQL-BASED ROUTES (message_queue, send_jobs, twitter_profiles)
+# These replace the legacy SQLite dm_queue for new Human-in-the-Loop workflow
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def pg_conn():
+    """Get PostgreSQL connection using infra config."""
+    from infra.db import get_connection
+    return get_connection()
+
+
+@app.route('/cc/v2/queue', methods=['GET'])
+def v2_queue():
+    """List message_queue items with pagination. Replaces legacy /cc/queue."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if token not in SESSIONS:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    status_filter = request.args.get('status', 'pending')
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(100, int(request.args.get('per_page', 50)))
+    offset = (page - 1) * per_page
+
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as cur:
+                # Total count
+                cur.execute(
+                    "SELECT COUNT(*) FROM message_queue WHERE status = %s",
+                    (status_filter,)
+                )
+                total = cur.fetchone()[0]
+
+                # Items with profile + account info
+                cur.execute("""
+                    SELECT
+                        mq.id, mq.status, mq.message_text, mq.send_type,
+                        mq.created_at, mq.sent_at, mq.target_tweet_id,
+                        tp.username  AS target_username,
+                        tp.full_name AS target_name,
+                        tp.followers_count, tp.tier, tp.bio,
+                        ta.username  AS sender_username,
+                        sj.id        AS job_id,
+                        sj.status    AS job_status,
+                        sj.claimed_by, sj.browser_ready_at
+                    FROM message_queue mq
+                    JOIN twitter_profiles tp ON tp.id = mq.profile_id
+                    JOIN twitter_accounts ta ON ta.id = mq.account_id
+                    LEFT JOIN send_jobs sj ON sj.msg_queue_id = mq.id
+                        AND sj.status NOT IN ('sent', 'failed', 'skipped')
+                    WHERE mq.status = %s
+                    ORDER BY mq.created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (status_filter, per_page, offset))
+
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+                # Serialize datetimes
+                for row in rows:
+                    for k, v in row.items():
+                        if hasattr(v, 'isoformat'):
+                            row[k] = v.isoformat()
+
+        return jsonify({
+            'items': rows,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/v2/queue/<int:msg_id>/approve', methods=['POST'])
+def v2_approve(msg_id):
+    """Approve message and create send_job for local_agent to pick up."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user = SESSIONS.get(token)
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as cur:
+                # Check message exists and is pending
+                cur.execute(
+                    "SELECT id, status FROM message_queue WHERE id = %s",
+                    (msg_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({'error': 'Not found'}), 404
+                if row[1] not in ('pending', 'generated'):
+                    return jsonify({'error': f'Cannot approve, status={row[1]}'}), 400
+
+                # Update message status
+                cur.execute(
+                    "UPDATE message_queue SET status='approved', reviewed_at=NOW() WHERE id=%s",
+                    (msg_id,)
+                )
+
+                # Create send_job for local_agent
+                cur.execute(
+                    "INSERT INTO send_jobs (msg_queue_id) VALUES (%s) RETURNING id",
+                    (msg_id,)
+                )
+                job_id = cur.fetchone()[0]
+            conn.commit()
+
+        return jsonify({'success': True, 'job_id': job_id,
+                        'message': f'Job #{job_id} created — waiting for local_agent'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/v2/queue/<int:msg_id>/reject', methods=['POST'])
+def v2_reject(msg_id):
+    """Reject message."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if token not in SESSIONS:
+        return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE message_queue SET status='rejected', reviewed_at=NOW() WHERE id=%s",
+                    (msg_id,)
+                )
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/v2/send-jobs', methods=['GET'])
+def v2_send_jobs():
+    """Live activity feed of send_jobs for operator monitoring."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if token not in SESSIONS:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        sj.id, sj.status, sj.claimed_by,
+                        sj.claimed_at, sj.browser_ready_at, sj.completed_at,
+                        sj.error_msg, sj.created_at,
+                        mq.message_text, mq.send_type,
+                        tp.username AS target_username, tp.tier,
+                        ta.username AS sender_username
+                    FROM send_jobs sj
+                    JOIN message_queue mq ON mq.id = sj.msg_queue_id
+                    JOIN twitter_profiles tp ON tp.id = mq.profile_id
+                    JOIN twitter_accounts ta ON ta.id = mq.account_id
+                    ORDER BY sj.created_at DESC
+                    LIMIT 100
+                """)
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                for row in rows:
+                    for k, v in row.items():
+                        if hasattr(v, 'isoformat'):
+                            row[k] = v.isoformat()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/v2/profiles', methods=['GET'])
+def v2_profiles():
+    """Paginated profiles list with filters."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if token not in SESSIONS:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(200, int(request.args.get('per_page', 50)))
+    offset = (page - 1) * per_page
+    tier = request.args.get('tier', '')
+    contacted = request.args.get('contacted', '')  # true/false
+    search = request.args.get('search', '')
+
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as cur:
+                conditions = []
+                params = []
+                if tier:
+                    conditions.append("tier = %s")
+                    params.append(tier)
+                if contacted == 'true':
+                    conditions.append("contacted = true")
+                elif contacted == 'false':
+                    conditions.append("(contacted = false OR contacted IS NULL)")
+                if search:
+                    conditions.append("(username ILIKE %s OR full_name ILIKE %s OR bio ILIKE %s)")
+                    params += [f'%{search}%', f'%{search}%', f'%{search}%']
+
+                where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+                cur.execute(f"SELECT COUNT(*) FROM twitter_profiles {where}", params)
+                total = cur.fetchone()[0]
+
+                cur.execute(f"""
+                    SELECT id, username, full_name, bio, followers_count,
+                           following_count, tier, contacted, collected_at
+                    FROM twitter_profiles
+                    {where}
+                    ORDER BY followers_count DESC
+                    LIMIT %s OFFSET %s
+                """, params + [per_page, offset])
+
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                for row in rows:
+                    for k, v in row.items():
+                        if hasattr(v, 'isoformat'):
+                            row[k] = v.isoformat()
+
+        return jsonify({
+            'items': rows,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/cc/v2/stats', methods=['GET'])
+def v2_stats():
+    """Real-time stats from PostgreSQL."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')  
+    if token not in SESSIONS:
+        return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as cur:
+                stats = {}
+                queries = {
+                    'profiles_total'     : "SELECT COUNT(*) FROM twitter_profiles",
+                    'profiles_enriched'  : "SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NOT NULL AND tier != ''",
+                    'profiles_contacted' : "SELECT COUNT(*) FROM twitter_profiles WHERE contacted = true",
+                    'queue_pending'      : "SELECT COUNT(*) FROM message_queue WHERE status IN ('pending','generated')",
+                    'queue_approved'     : "SELECT COUNT(*) FROM message_queue WHERE status = 'approved'",
+                    'jobs_queued'        : "SELECT COUNT(*) FROM send_jobs WHERE status = 'queued'",
+                    'jobs_in_progress'   : "SELECT COUNT(*) FROM send_jobs WHERE status IN ('claimed','browser_ready')",
+                    'sent_today'         : "SELECT COUNT(*) FROM send_jobs WHERE status='sent' AND completed_at >= NOW() - INTERVAL '24 hours'",
+                    'tier_s'             : "SELECT COUNT(*) FROM twitter_profiles WHERE tier = 'S'",
+                    'tier_a'             : "SELECT COUNT(*) FROM twitter_profiles WHERE tier = 'A'",
+                    'tier_b'             : "SELECT COUNT(*) FROM twitter_profiles WHERE tier = 'B'",
+                }
+                for key, sql in queries.items():
+                    cur.execute(sql)
+                    stats[key] = cur.fetchone()[0]
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8899))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
