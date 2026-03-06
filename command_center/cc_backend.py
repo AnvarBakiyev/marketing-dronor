@@ -1277,5 +1277,5 @@ if __name__ == '__main__':
     print(f"📁 Database: {DB_PATH}")
     print("\nPress Ctrl+C to stop\n")
     
-    app.run(host='0.0.0.0', port=8899, debug=True)
+    app.run(host='0.0.0.0', port=8899, debug=False, use_reloader=False)
 
