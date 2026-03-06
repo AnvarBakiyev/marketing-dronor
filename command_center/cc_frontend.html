@@ -1194,9 +1194,9 @@ kbd {
     <div class="login-error" id="login-error"></div>
     <div id="login-form">
       <div class="login-field-label">Operator name</div>
-      <input class="login-input" id="login-name" placeholder="your_name" autocomplete="username">
+      <input class="login-input" id="login-name" placeholder="your_name" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pin').focus()">
       <div class="login-field-label">PIN</div>
-      <input class="login-input" id="login-pin" type="password" placeholder="••••" autocomplete="current-password">
+      <input class="login-input" id="login-pin" type="password" placeholder="••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
       <button class="login-btn" onclick="doLogin()">ENTER →</button>
     </div>
     <div id="setup-form" style="display:none">
