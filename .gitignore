@@ -9,3 +9,6 @@ app/build/
 app/dist/
 app/__pycache__/
 app/icon.iconset/
+
+# Production databases
+twitter_outreach.db
