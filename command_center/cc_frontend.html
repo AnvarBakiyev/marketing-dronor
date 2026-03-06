@@ -2656,26 +2656,28 @@ function debounceProfileSearch() {
   profilesSearchTimer = setTimeout(() => loadProfiles(1), 400);
 }
 
-async function loadProfiles(page = 1) {
+async function loadProfiles(page) {
+  if (page === undefined) page = 1;
   profilesPage = page;
-  const search    = document.getElementById('profiles-search')?.value || '';
-  const tier      = document.getElementById('profiles-tier')?.value || '';
-  const contacted = document.getElementById('profiles-contacted')?.value || '';
+  var search    = (document.getElementById('profiles-search') || {}).value || '';
+  var tier      = (document.getElementById('profiles-tier') || {}).value || '';
+  var contacted = (document.getElementById('profiles-contacted') || {}).value || '';
 
-  const params = new URLSearchParams({ page, per_page: 50 });
-  if (search)    params.set('search', search);
-  if (tier)      params.set('tier', tier);
-  if (contacted) params.set('contacted', contacted);
+  var qs = 'page=' + page + '&per_page=50';
+  if (search)    qs += '&search=' + encodeURIComponent(search);
+  if (tier)      qs += '&tier=' + encodeURIComponent(tier);
+  if (contacted) qs += '&contacted=' + encodeURIComponent(contacted);
 
-  const tbody = document.getElementById('profiles-tbody');
+  var tbody = document.getElementById('profiles-tbody');
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">Loading...</td></tr>';
 
   try {
-    const r = await api('/cc/v2/profiles?' + params);
+    var r = await api('/cc/v2/profiles?' + qs);
     profilesTotal = r.total;
-    document.getElementById('profiles-count').textContent =
-      `${r.total.toLocaleString()} profiles — page ${r.page}/${r.pages}`;
-    document.getElementById('nb-profiles').textContent = r.total.toLocaleString();
+    var countEl = document.getElementById('profiles-count');
+    if (countEl) countEl.textContent = r.total.toLocaleString() + ' profiles \u2014 page ' + r.page + '/' + r.pages;
+    var nbEl = document.getElementById('nb-profiles');
+    if (nbEl) nbEl.textContent = r.total.toLocaleString();
 
     if (!r.items.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">No profiles found</td></tr>';
@@ -2683,30 +2685,33 @@ async function loadProfiles(page = 1) {
       return;
     }
 
-    tbody.innerHTML = r.items.map(p => {
-      const tierColor = {S:'var(--accent)',A:'#a78bfa',B:'var(--yellow)',C:'var(--text2)',D:'var(--text3)'}[p.tier] || 'var(--text3)';
-      const contactedBadge = p.contacted
-        ? '<span style="color:var(--accent);font-size:9px">✓ SENT</span>'
-        : '<span style="color:var(--text3);font-size:9px">—</span>';
-      const bio = (p.bio || '').slice(0, 60).replace(/</g,'&lt;');
-      const date = p.collected_at ? p.collected_at.slice(0,10) : '—';
-      return `<tr>
-        <td style="font-family:var(--mono);font-size:11px">
-          <a href="https://twitter.com/${p.username}" target="_blank"
-             style="color:var(--accent);text-decoration:none">@${p.username}</a>
-        </td>
-        <td style="font-size:11px;color:var(--text2)">${(p.full_name||'').replace(/</g,'&lt;').slice(0,25)}</td>
-        <td style="font-size:10px;color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(p.bio||'').replace(/"/g,'&quot;')}">${bio}</td>
-        <td style="font-family:var(--mono);font-size:11px;text-align:right">${(p.followers_count||0).toLocaleString()}</td>
-        <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:${tierColor}">${p.tier||'—'}</td>
-        <td>${contactedBadge}</td>
-        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${date}</td>
-      </tr>`;
-    }).join('');
-
+    var tierColors = {S:'var(--accent)', A:'#a78bfa', B:'var(--yellow)', C:'var(--text2)', D:'var(--text3)'};
+    var rows = '';
+    for (var i = 0; i < r.items.length; i++) {
+      var p = r.items[i];
+      var tc = tierColors[p.tier] || 'var(--text3)';
+      var contacted_badge = p.contacted
+        ? '<span style="color:var(--accent);font-size:9px">&#10003; SENT</span>'
+        : '<span style="color:var(--text3);font-size:9px">&#8212;</span>';
+      var bio = ((p.bio || '').slice(0,60)).replace(/</g,'&lt;');
+      var bioFull = (p.bio || '').replace(/"/g,'&quot;');
+      var name = (p.full_name || '').replace(/</g,'&lt;').slice(0,25);
+      var date = p.collected_at ? p.collected_at.slice(0,10) : '\u2014';
+      var followers = (p.followers_count || 0).toLocaleString();
+      rows += '<tr>';
+      rows += '<td style="font-family:var(--mono);font-size:11px"><a href="https://twitter.com/' + p.username + '" target="_blank" style="color:var(--accent);text-decoration:none">@' + p.username + '</a></td>';
+      rows += '<td style="font-size:11px;color:var(--text2)">' + name + '</td>';
+      rows += '<td style="font-size:10px;color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + bioFull + '">' + bio + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:11px;text-align:right">' + followers + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:12px;font-weight:600;color:' + tc + '">' + (p.tier || '\u2014') + '</td>';
+      rows += '<td>' + contacted_badge + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + date + '</td>';
+      rows += '</tr>';
+    }
+    tbody.innerHTML = rows;
     renderProfilesPagination(r);
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#f87171">Error: ${e.message}</td></tr>`;
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#f87171">Error: ' + e.message + '</td></tr>';
   }
 }
 
@@ -2739,18 +2744,18 @@ async function loadSendActivity() {
     const jobs = await api('/cc/v2/send-jobs');
     document.getElementById('nb-sendactivity').textContent = jobs.length;
 
-    const sent     = jobs.filter(j => j.status === 'sent').length;
-    const active   = jobs.filter(j => ['claimed','browser_ready'].includes(j.status)).length;
-    const failed   = jobs.filter(j => j.status === 'failed').length;
-    document.getElementById('sa-stats').textContent =
-      `${sent} sent · ${active} in progress · ${failed} failed`;
+    const sent   = jobs.filter(j => j.status === 'sent').length;
+    const active = jobs.filter(j => ['claimed','browser_ready'].includes(j.status)).length;
+    const failed = jobs.filter(j => j.status === 'failed').length;
+    const saStats = document.getElementById('sa-stats');
+    if (saStats) saStats.textContent = sent + ' sent \u00b7 ' + active + ' in progress \u00b7 ' + failed + ' failed';
 
     if (!jobs.length) {
       tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text3)">No jobs yet. Approve messages in Queue to create jobs.</td></tr>';
       return;
     }
 
-    const statusColors = {
+    var statusColors = {
       queued:        'color:var(--text3)',
       claimed:       'color:var(--yellow)',
       browser_ready: 'color:#60a5fa',
@@ -2758,36 +2763,38 @@ async function loadSendActivity() {
       failed:        'color:#f87171',
       skipped:       'color:var(--text3)'
     };
-    const statusIcons = {
-      queued:'⏳', claimed:'🔒', browser_ready:'🌐', sent:'✅', failed:'❌', skipped:'⏭'
+    var statusLabels = {
+      queued:'QUEUED', claimed:'CLAIMED', browser_ready:'BROWSER READY',
+      sent:'SENT', failed:'FAILED', skipped:'SKIPPED'
     };
+    var tierColors = {S:'var(--accent)', A:'#a78bfa', B:'var(--yellow)'};
 
-    tbody.innerHTML = jobs.map(j => {
-      const sc = statusColors[j.status] || '';
-      const si = statusIcons[j.status] || '';
-      const msgPreview = (j.message_text||'').slice(0,50).replace(/</g,'&lt;');
-      const browserReady = j.browser_ready_at ? j.browser_ready_at.slice(11,19) : '—';
-      const completed    = j.completed_at    ? j.completed_at.slice(11,19)    : '—';
-      const tierColor = {S:'var(--accent)',A:'#a78bfa',B:'var(--yellow)'}[j.tier] || 'var(--text3)';
-      return `<tr>
-        <td style="font-family:var(--mono);font-size:11px">#${j.id}</td>
-        <td style="font-family:var(--mono);font-size:11px;${sc}">${si} ${j.status.toUpperCase()}</td>
-        <td style="font-family:var(--mono);font-size:10px;color:var(--text2)">${(j.send_type||'dm').toUpperCase()}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">@${j.sender_username||'—'}</td>
-        <td style="font-family:var(--mono);font-size:11px">
-          <a href="https://twitter.com/${j.target_username}" target="_blank"
-             style="color:var(--accent);text-decoration:none">@${j.target_username||'—'}</a>
-        </td>
-        <td style="font-family:var(--mono);font-size:11px;color:${tierColor}">${j.tier||'—'}</td>
-        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${j.claimed_by||'—'}</td>
-        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${browserReady}</td>
-        <td style="font-family:var(--mono);font-size:10px;color:var(--text3)">${completed}</td>
-        <td style="font-size:10px;color:var(--text3);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="${msgPreview}">${msgPreview}${j.error_msg ? ' <span style='color:#f87171'>[ERR: '+j.error_msg.slice(0,30)+']</span>' : ''}</td>
-      </tr>`;
-    }).join('');
+    var rows = '';
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i];
+      var sc = statusColors[j.status] || '';
+      var sl = statusLabels[j.status] || j.status.toUpperCase();
+      var msgPreview = (j.message_text || '').slice(0,50).replace(/</g,'&lt;');
+      var browserReady = j.browser_ready_at ? j.browser_ready_at.slice(11,19) : '\u2014';
+      var completed    = j.completed_at    ? j.completed_at.slice(11,19)    : '\u2014';
+      var tc = tierColors[j.tier] || 'var(--text3)';
+      var errHtml = j.error_msg ? ' <span style="color:#f87171">[' + j.error_msg.slice(0,30) + ']</span>' : '';
+      rows += '<tr>';
+      rows += '<td style="font-family:var(--mono);font-size:11px">#' + j.id + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:11px;' + sc + '">' + sl + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:10px;color:var(--text2)">' + (j.send_type || 'dm').toUpperCase() + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:11px;color:var(--text2)">@' + (j.sender_username || '\u2014') + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:11px"><a href="https://twitter.com/' + (j.target_username||'') + '" target="_blank" style="color:var(--accent);text-decoration:none">@' + (j.target_username || '\u2014') + '</a></td>';
+      rows += '<td style="font-family:var(--mono);font-size:11px;color:' + tc + '">' + (j.tier || '\u2014') + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + (j.claimed_by || '\u2014') + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + browserReady + '</td>';
+      rows += '<td style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + completed + '</td>';
+      rows += '<td style="font-size:10px;color:var(--text3);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + msgPreview + '">' + msgPreview + errHtml + '</td>';
+      rows += '</tr>';
+    }
+    tbody.innerHTML = rows;
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:20px;color:#f87171">Error: ${e.message}</td></tr>`;
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:#f87171">Error: ' + e.message + '</td></tr>';
   }
 }
 
