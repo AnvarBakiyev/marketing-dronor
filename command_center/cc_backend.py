@@ -273,19 +273,19 @@ def dashboard():
             data['queue_in_review'] = cursor.fetchone()['cnt']
         except: pass
         
-        # Profile stats
+        # Profile stats - PostgreSQL twitter_profiles
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles')
-            data['profiles_total'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
-            data['profiles_enriched'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 0')
-            data['profiles_pending'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE contacted = 1')
-            data['profiles_contacted'] = cursor.fetchone()['cnt']
+            from infra.db import get_connection
+            with get_connection() as pg:
+                with pg.cursor() as pgcur:
+                    pgcur.execute('SELECT COUNT(*) FROM twitter_profiles')
+                    data['profiles_total'] = pgcur.fetchone()[0]
+                    pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NOT NULL AND tier != ''")
+                    data['profiles_enriched'] = pgcur.fetchone()[0]
+                    pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NULL OR tier = ''")
+                    data['profiles_pending'] = pgcur.fetchone()[0]
+                    pgcur.execute('SELECT COUNT(*) FROM twitter_profiles WHERE contacted = true')
+                    data['profiles_contacted'] = pgcur.fetchone()[0]
         except: pass
         
         # Activity log
