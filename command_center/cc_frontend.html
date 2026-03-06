@@ -1587,8 +1587,8 @@ async function doLogin() {
     const d = await fetch(API+'/cc/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,pin})}).then(r=>r.json());
     if (d.success) {
       AUTH_TOKEN = d.token;
-      currentUser = d.operator;
-      localStorage.setItem('cc_v3_session', JSON.stringify({token:d.token,operator:d.operator}));
+      currentUser = d.user;
+      localStorage.setItem('cc_v3_session', JSON.stringify({token:d.token,operator:d.user}));
       document.getElementById('login-overlay').classList.add('hidden');
       document.getElementById('tb-operator').textContent = currentUser.name.toUpperCase();
       if (currentUser.role === 'admin') {
