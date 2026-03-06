@@ -1590,7 +1590,7 @@ async function doLogin() {
       currentUser = d.user;
       localStorage.setItem('cc_v3_session', JSON.stringify({token:d.token,operator:d.user}));
       document.getElementById('login-overlay').classList.add('hidden');
-      document.getElementById('tb-operator').textContent = currentUser.name.toUpperCase();
+      document.getElementById('tb-operator').textContent = (currentUser && currentUser.name) ? currentUser.name.toUpperCase() : '';
       if (currentUser.role === 'admin') {
         document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
       }
@@ -1616,21 +1616,21 @@ function restoreSession() {
   if (!s) return;
   const sess = JSON.parse(s);
   AUTH_TOKEN = sess.token;
-  currentUser = sess.operator;
+  currentUser = sess.user || sess.operator;  // compat fix
   // validate
   fetch(API+'/cc/validate',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN}})
     .then(r=>r.json())
     .then(d => {
       if (d.valid) {
         document.getElementById('login-overlay').classList.add('hidden');
-        document.getElementById('tb-operator').textContent = currentUser.name.toUpperCase();
+        document.getElementById('tb-operator').textContent = (currentUser && currentUser.name) ? currentUser.name.toUpperCase() : '';
         if (currentUser.role === 'admin') document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
         initApp();
       } else { doLogout(); }
     }).catch(() => {
       // backend down — still show UI
       document.getElementById('login-overlay').classList.add('hidden');
-      document.getElementById('tb-operator').textContent = currentUser.name.toUpperCase();
+      document.getElementById('tb-operator').textContent = (currentUser && currentUser.name) ? currentUser.name.toUpperCase() : '';
       initApp();
     });
 }
@@ -2544,5 +2544,20 @@ async function saveApiKey(envKey, inputId) {
     </div>
   </div>
 </div>
+
+<script>
+// Global Enter key handler for login form (pywebview fallback)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  const overlay = document.getElementById('login-overlay');
+  if (!overlay || overlay.classList.contains('hidden')) return;
+  const active = document.activeElement;
+  if (active && active.id === 'login-name') {
+    document.getElementById('login-pin').focus();
+  } else {
+    doLogin();
+  }
+});
+</script>
 </body>
 </html>
