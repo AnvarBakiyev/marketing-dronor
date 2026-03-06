@@ -33,15 +33,66 @@ sys.path.insert(0, str(PROJECT_ROOT))
 app = Flask(__name__, static_folder=str(Path(__file__).parent))
 CORS(app)
 
-# Database path
+# Database — SQLite locally, PostgreSQL on Railway
 DB_PATH = PROJECT_ROOT / 'twitter_outreach.db'
+DATABASE_URL = os.environ.get('DATABASE_URL')
 SESSIONS = {}  # In-memory sessions (token -> user_info)
 
+class _PgCursorWrapper:
+    """Wraps psycopg2 cursor to behave like sqlite3 cursor (auto-convert ? to %s)."""
+    def __init__(self, cur):
+        self._cur = cur
+    def execute(self, q, params=None):
+        q = q.replace('?', '%s')
+        if params is None:
+            self._cur.execute(q)
+        else:
+            self._cur.execute(q, params)
+        return self
+    def fetchone(self): return self._cur.fetchone()
+    def fetchall(self): return self._cur.fetchall()
+    def __iter__(self): return iter(self._cur.fetchall())
+    @property
+    def lastrowid(self): return self._cur.fetchone()[0] if self._cur.rowcount else None
+    @property
+    def rowcount(self): return self._cur.rowcount
+
+class _PgConnWrapper:
+    """Wraps psycopg2 connection to behave like sqlite3 connection."""
+    def __init__(self, conn):
+        self._conn = conn
+    def execute(self, q, params=None):
+        cur = _PgCursorWrapper(self._conn.cursor(cursor_factory=__import__('psycopg2.extras', fromlist=['RealDictCursor']).RealDictCursor))
+        cur.execute(q, params)
+        return cur
+    def commit(self): self._conn.commit()
+    def close(self): self._conn.close()
+    def __enter__(self): return self
+    def __exit__(self, *a): 
+        self._conn.commit()
+        self._conn.close()
+
 def get_db():
-    """Get database connection."""
+    """Get database connection. Uses PostgreSQL on Railway, SQLite locally."""
+    if DATABASE_URL:
+        import psycopg2
+        import psycopg2.extras
+        url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+        conn = psycopg2.connect(url)
+        return _PgConnWrapper(conn)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     return conn
+
+def _placeholder():
+    """Return ? for SQLite, %s for PostgreSQL."""
+    return '%s' if DATABASE_URL else '?'
+
+def _adapt_query(q):
+    """Adapt SQLite query to PostgreSQL if needed."""
+    if DATABASE_URL:
+        return q.replace('?', '%s')
+    return q
 
 def hash_pin(pin: str) -> str:
     """Hash PIN for storage."""
