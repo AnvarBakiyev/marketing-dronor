@@ -3,3 +3,9 @@ infra/config.py
 __pycache__/
 .env
 *.log
+
+# PyInstaller build artifacts
+app/build/
+app/dist/
+app/__pycache__/
+app/icon.iconset/
