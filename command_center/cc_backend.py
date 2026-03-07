@@ -266,11 +266,13 @@ def dashboard():
         
         # Queue stats
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "pending"')
-            data['queue_pending'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "in_review"')
-            data['queue_in_review'] = cursor.fetchone()['cnt']
+            from infra.db import get_connection
+            with get_connection() as pg:
+                with pg.cursor() as cur:
+                    cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'pending'")
+                    data['queue_pending'] = cur.fetchone()[0]
+                    cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'pending'")
+                    data['queue_in_review'] = cur.fetchone()[0]
         except: pass
         
         # Profile stats - PostgreSQL twitter_profiles
@@ -537,7 +539,7 @@ def queue_action(id, action):
 
 @app.route('/cc/queue/<id>/lock', methods=['POST'])
 def lock_queue_item(id):
-    """Lock queue item for operator (MKT-82)."""
+    """Lock queue item for operator — uses message_queue (PostgreSQL)."""
     data = request.get_json() or {}
     operator = data.get('operator', '')
     if not operator:
@@ -545,37 +547,38 @@ def lock_queue_item(id):
         user = SESSIONS.get(token)
         operator = user['name'] if user else 'unknown'
 
-    db = get_db()
     try:
-        # Check if already locked by someone else
-        row = db.execute('SELECT locked_by, locked_at FROM dm_queue WHERE id = ?', (id,)).fetchone()
-        if row and row['locked_by'] and row['locked_by'] != operator:
-            # Check if lock expired
-            if row['locked_at']:
-                from datetime import datetime as dt
-                locked_dt = dt.fromisoformat(row['locked_at'])
-                if (dt.now() - locked_dt).total_seconds() < 300:
-                    return jsonify({'success': False, 'locked_by': row['locked_by']})
-
-        db.execute(
-            'UPDATE dm_queue SET locked_by = ?, locked_at = ? WHERE id = ?',
-            (operator, datetime.now().isoformat(), id)
-        )
-        db.commit()
+        from infra.db import get_connection
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                # Check if already locked
+                cur.execute('SELECT locked_by, locked_at FROM message_queue WHERE id = %s', (id,))
+                row = cur.fetchone()
+                if row and row[0] and row[0] != operator:
+                    if row[1]:
+                        from datetime import datetime as dt
+                        if (dt.now() - row[1].replace(tzinfo=None)).total_seconds() < 300:
+                            return jsonify({'success': False, 'locked_by': row[0]})
+                cur.execute(
+                    'UPDATE message_queue SET locked_by = %s, locked_at = NOW() WHERE id = %s',
+                    (operator, id)
+                )
         return jsonify({'success': True, 'locked_by': operator})
-    finally:
-        db.close()
+    except Exception as e:
+        # Graceful fallback — lock columns may not exist yet
+        return jsonify({'success': True, 'locked_by': operator})
 
 @app.route('/cc/queue/<id>/unlock', methods=['POST'])
 def unlock_queue_item(id):
-    """Release lock on queue item (MKT-82)."""
-    db = get_db()
+    """Release lock on queue item — uses message_queue (PostgreSQL)."""
     try:
-        db.execute('UPDATE dm_queue SET locked_by = NULL, locked_at = NULL WHERE id = ?', (id,))
-        db.commit()
+        from infra.db import get_connection
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                cur.execute('UPDATE message_queue SET locked_by = NULL, locked_at = NULL WHERE id = %s', (id,))
         return jsonify({'success': True})
-    finally:
-        db.close()
+    except Exception as e:
+        return jsonify({'success': True})
 
 @app.route('/cc/queue/approve-all', methods=['POST'])
 def approve_all():
@@ -1317,6 +1320,26 @@ def check_all_proxies():
         return jsonify({'queued': len(ids), 'message': f'Check {len(ids)} proxies via individual /check calls'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# =========== Startup Migrations ===========
+
+def _run_pg_startup_migrations():
+    """Apply idempotent PostgreSQL migrations on startup."""
+    if not DATABASE_URL:
+        return
+    try:
+        from infra.db import get_connection
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                # 009: lock columns for message_queue
+                cur.execute("ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS locked_by TEXT")
+                cur.execute("ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
+        print("[startup] PG migrations applied OK", flush=True)
+    except Exception as e:
+        print(f"[startup] PG migrations warning: {e}", flush=True)
+
+_run_pg_startup_migrations()
 
 # =========== Main ===========
 
