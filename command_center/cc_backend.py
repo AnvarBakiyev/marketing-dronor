@@ -440,118 +440,90 @@ def bulk_import_accounts():
 
 # =========== Queue ===========
 
+# =========== Queue (PostgreSQL) ===========
+
 @app.route('/cc/queue', methods=['GET'])
 def get_queue():
-    """Get DM queue items by status."""
+    """Get message queue items by status - PostgreSQL."""
+    from infra.db import get_connection
     status = request.args.get('status', 'pending')
-    
-    db = get_db()
+    operator = request.args.get('operator', '')
+    status_map = {'pending': 'pending', 'in_review': 'in_review',
+                  'approved': 'approved', 'rejected': 'rejected'}
+    pg_status = status_map.get(status, status)
     try:
-        # Ensure table exists
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS dm_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                profile_id INTEGER,
-                target_username TEXT NOT NULL,
-                target_name TEXT,
-                sender_username TEXT,
-                message_text TEXT NOT NULL,
-                tier TEXT DEFAULT 'B',
-                category TEXT,
-                outreach_type TEXT DEFAULT 'dm',
-                thread_context TEXT,
-                tweet_url TEXT,
-                status TEXT DEFAULT 'pending',
-                reviewed_by TEXT,
-                reviewed_at TEXT,
-                sent_at TEXT,
-                locked_by TEXT,
-                locked_at TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-            -- Auto-add lock columns if upgrading from old schema
-            
-        ''')
-        db.commit()
-        
-        # MKT-82: Release expired locks (older than 5 min)
-        db.execute("""UPDATE dm_queue
-            SET locked_by = NULL, locked_at = NULL
-            WHERE locked_at IS NOT NULL
-            AND datetime(locked_at) < datetime('now', '-5 minutes')""")
-        db.commit()
-
-        # Add lock columns if missing (schema upgrade)
-        try:
-            db.execute('ALTER TABLE dm_queue ADD COLUMN locked_by TEXT')
-            db.execute('ALTER TABLE dm_queue ADD COLUMN locked_at TEXT')
-            db.execute('ALTER TABLE dm_queue ADD COLUMN outreach_type TEXT DEFAULT "dm"')
-            db.execute('ALTER TABLE dm_queue ADD COLUMN thread_context TEXT')
-            db.execute('ALTER TABLE dm_queue ADD COLUMN tweet_url TEXT')
-            db.commit()
-        except Exception:
-            pass  # Columns already exist
-
-        operator = request.args.get('operator', '')
-        cursor = db.execute("""SELECT *,
-            CASE WHEN locked_by IS NOT NULL AND locked_by != ? THEN 1 ELSE 0 END as is_locked_by_other
-            FROM dm_queue WHERE status = ?
-            ORDER BY
-                CASE tier WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 ELSE 4 END,
-                created_at DESC
-            LIMIT 100""", (operator, status))
-        items = [dict(row) for row in cursor.fetchall()]
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                cur.execute(
+                    "UPDATE message_queue SET locked_by = NULL, locked_at = NULL"
+                    " WHERE locked_at IS NOT NULL"
+                    " AND locked_at < NOW() - INTERVAL '5 minutes'"
+                )
+                cur.execute(
+                    "SELECT mq.id, mq.message_text, mq.status, mq.send_type,"
+                    " mq.created_at, mq.locked_by, mq.locked_at,"
+                    " mq.reviewed_by, mq.reviewed_at,"
+                    " tp.username AS target_username,"
+                    " tp.full_name AS target_name,"
+                    " tp.tier, ta.username AS sender_username,"
+                    " CASE WHEN mq.locked_by IS NOT NULL AND mq.locked_by != %s"
+                    " THEN 1 ELSE 0 END AS is_locked_by_other"
+                    " FROM message_queue mq"
+                    " LEFT JOIN twitter_profiles tp ON tp.id = mq.profile_id"
+                    " LEFT JOIN twitter_accounts ta ON ta.id = mq.account_id"
+                    " WHERE mq.status = %s"
+                    " ORDER BY CASE tp.tier WHEN 'S' THEN 1 WHEN 'A' THEN 2"
+                    " WHEN 'B' THEN 3 ELSE 4 END, mq.created_at DESC LIMIT 100",
+                    (operator, pg_status)
+                )
+                cols = [d[0] for d in cur.description]
+                items = [dict(zip(cols, row)) for row in cur.fetchall()]
         return jsonify({'items': items})
-    finally:
-        db.close()
+    except Exception as e:
+        log(f"get_queue error: {e}")
+        return jsonify({'items': [], 'error': str(e)}), 500
+
 
 @app.route('/cc/queue/<id>/<action>', methods=['POST'])
 def queue_action(id, action):
-    """Perform action on queue item (approve/reject/send)."""
-    db = get_db()
+    """Approve/reject/send queue item - PostgreSQL."""
+    from infra.db import get_connection
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user = SESSIONS.get(token, {})
+    operator_name = user.get('name', 'unknown')
+    action_map = {
+        'approve': "UPDATE message_queue SET status='approved', reviewed_by=%s, reviewed_at=NOW(), locked_by=NULL, locked_at=NULL WHERE id=%s",
+        'reject':  "UPDATE message_queue SET status='rejected', reviewed_by=%s, reviewed_at=NOW(), locked_by=NULL, locked_at=NULL WHERE id=%s",
+    }
+    if action == 'send':
+        sql, params = "UPDATE message_queue SET status='approved' WHERE id=%s", (id,)
+    elif action in action_map:
+        sql, params = action_map[action], (operator_name, id)
+    else:
+        return jsonify({'success': False, 'error': 'Unknown action'}), 400
     try:
-        # Get operator from session
-        token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        user = SESSIONS.get(token, {})
-        operator_name = user.get('name', 'unknown')
-
-        if action == 'approve':
-            db.execute(
-                'UPDATE dm_queue SET status = "approved", reviewed_by = ?, reviewed_at = ?, locked_by = NULL, locked_at = NULL WHERE id = ?',
-                (operator_name, datetime.now().isoformat(), id)
-            )
-        elif action == 'reject':
-            db.execute(
-                'UPDATE dm_queue SET status = "rejected", reviewed_by = ?, reviewed_at = ?, locked_by = NULL, locked_at = NULL WHERE id = ?',
-                (operator_name, datetime.now().isoformat(), id)
-            )
-        elif action == 'send':
-            # Mark as ready to send
-            db.execute(
-                'UPDATE dm_queue SET status = "ready_to_send" WHERE id = ?',
-                (id,)
-            )
-        db.commit()
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                cur.execute(sql, params)
         return jsonify({'success': True})
-    finally:
-        db.close()
+    except Exception as e:
+        log(f"queue_action error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/cc/queue/<id>/lock', methods=['POST'])
 def lock_queue_item(id):
-    """Lock queue item for operator — uses message_queue (PostgreSQL)."""
+    """Lock queue item for operator - PostgreSQL."""
+    from infra.db import get_connection
     data = request.get_json() or {}
     operator = data.get('operator', '')
     if not operator:
         token = request.headers.get('Authorization', '').replace('Bearer ', '')
         user = SESSIONS.get(token)
         operator = user['name'] if user else 'unknown'
-
     try:
-        from infra.db import get_connection
         with get_connection() as pg:
             with pg.cursor() as cur:
-                # Check if already locked
                 cur.execute('SELECT locked_by, locked_at FROM message_queue WHERE id = %s', (id,))
                 row = cur.fetchone()
                 if row and row[0] and row[0] != operator:
@@ -559,150 +531,75 @@ def lock_queue_item(id):
                         from datetime import datetime as dt
                         if (dt.now() - row[1].replace(tzinfo=None)).total_seconds() < 300:
                             return jsonify({'success': False, 'locked_by': row[0]})
-                cur.execute(
-                    'UPDATE message_queue SET locked_by = %s, locked_at = NOW() WHERE id = %s',
-                    (operator, id)
-                )
+                cur.execute('UPDATE message_queue SET locked_by = %s, locked_at = NOW() WHERE id = %s',
+                            (operator, id))
         return jsonify({'success': True, 'locked_by': operator})
-    except Exception as e:
-        # Graceful fallback — lock columns may not exist yet
+    except Exception:
         return jsonify({'success': True, 'locked_by': operator})
+
 
 @app.route('/cc/queue/<id>/unlock', methods=['POST'])
 def unlock_queue_item(id):
-    """Release lock on queue item — uses message_queue (PostgreSQL)."""
+    """Release lock - PostgreSQL."""
+    from infra.db import get_connection
     try:
-        from infra.db import get_connection
         with get_connection() as pg:
             with pg.cursor() as cur:
                 cur.execute('UPDATE message_queue SET locked_by = NULL, locked_at = NULL WHERE id = %s', (id,))
         return jsonify({'success': True})
-    except Exception as e:
+    except Exception:
         return jsonify({'success': True})
+
 
 @app.route('/cc/queue/approve-all', methods=['POST'])
 def approve_all():
-    """Approve all pending/in_review items."""
-    db = get_db()
+    """Approve all pending/in_review items - PostgreSQL."""
+    from infra.db import get_connection
     try:
-        cursor = db.execute('''
-            UPDATE dm_queue SET status = "approved", reviewed_at = ?
-            WHERE status IN ("pending", "in_review")
-        ''', (datetime.now().isoformat(),))
-        db.commit()
-        return jsonify({'success': True, 'approved': cursor.rowcount})
-    finally:
-        db.close()
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                cur.execute("UPDATE message_queue SET status='approved', reviewed_at=NOW()"
+                            " WHERE status IN ('pending', 'in_review')")
+                count = cur.rowcount
+        return jsonify({'success': True, 'approved': count})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # =========== Responses ===========
 
 @app.route('/cc/responses', methods=['GET'])
 def get_responses():
-    """Get conversation list."""
-    db = get_db()
-    try:
-        # Ensure table exists
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                profile_id INTEGER,
-                target_username TEXT NOT NULL,
-                target_name TEXT,
-                unread INTEGER DEFAULT 1,
-                last_message TEXT,
-                last_time TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                conversation_id INTEGER NOT NULL,
-                direction TEXT NOT NULL,
-                text TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        db.commit()
-        
-        cursor = db.execute('''
-            SELECT * FROM conversations ORDER BY last_time DESC LIMIT 50
-        ''')
-        conversations = [dict(row) for row in cursor.fetchall()]
-        return jsonify({'conversations': conversations})
-    finally:
-        db.close()
+    """Conversation list - stub until response tracking is implemented."""
+    return jsonify({'conversations': []})
+
 
 @app.route('/cc/responses/<conv_id>', methods=['GET'])
 def get_conversation_detail(conv_id):
-    """Get conversation messages."""
-    db = get_db()
-    try:
-        cursor = db.execute('SELECT * FROM conversations WHERE id = ?', (conv_id,))
-        conv = cursor.fetchone()
-        if not conv:
-            return jsonify({'error': 'Not found'}), 404
-        
-        cursor = db.execute('''
-            SELECT direction, text, created_at as time FROM messages
-            WHERE conversation_id = ? ORDER BY created_at ASC
-        ''', (conv_id,))
-        messages = [dict(row) for row in cursor.fetchall()]
-        
-        # Mark as read
-        db.execute('UPDATE conversations SET unread = 0 WHERE id = ?', (conv_id,))
-        db.commit()
-        
-        return jsonify({
-            'conversation': {
-                **dict(conv),
-                'messages': messages
-            }
-        })
-    finally:
-        db.close()
+    return jsonify({'error': 'Not found'}), 404
+
 
 @app.route('/cc/responses/<conv_id>/generate', methods=['POST'])
 def generate_reply(conv_id):
-    """Generate AI reply for conversation."""
-    # TODO: Integrate with Claude
-    return jsonify({
-        'reply': 'Thanks for reaching out! I\'d love to learn more about your needs. Could you tell me a bit more about your current setup?'
-    })
+    return jsonify({'reply': "Thanks for reaching out! I'd love to learn more about your needs."})
+
 
 @app.route('/cc/responses/<conv_id>/reply', methods=['POST'])
 def send_reply(conv_id):
-    """Queue a reply message."""
+    """Queue a reply - inserts into message_queue (PostgreSQL)."""
+    from infra.db import get_connection
     data = request.get_json()
-    text = data.get('text', '').strip()
-    
+    text = (data.get('text') or '').strip()
     if not text:
         return jsonify({'success': False, 'error': 'Reply text required'})
-    
-    db = get_db()
     try:
-        # Get conversation
-        cursor = db.execute('SELECT * FROM conversations WHERE id = ?', (conv_id,))
-        conv = cursor.fetchone()
-        if not conv:
-            return jsonify({'success': False, 'error': 'Conversation not found'})
-        
-        # Add to queue
-        db.execute('''
-            INSERT INTO dm_queue (target_username, target_name, message_text, status)
-            VALUES (?, ?, ?, 'approved')
-        ''', (conv['target_username'], conv['target_name'], text))
-        
-        # Add to messages
-        db.execute('''
-            INSERT INTO messages (conversation_id, direction, text)
-            VALUES (?, 'outgoing', ?)
-        ''', (conv_id, text))
-        
-        db.commit()
+        with get_connection() as pg:
+            with pg.cursor() as cur:
+                cur.execute("INSERT INTO message_queue (message_text, status, send_type, created_at)"
+                            " VALUES (%s, 'approved', 'dm', NOW())", (text,))
         return jsonify({'success': True})
-    finally:
-        db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # =========== Module Execution ===========
@@ -1050,26 +947,20 @@ def get_admin_data():
         ''')
         operators = [dict(row) for row in cursor.fetchall()]
         
-        # Funnel stats
+        # Funnel stats - PostgreSQL
         funnel = {'collected': 0, 'enriched': 0, 'generated': 0, 'approved': 0, 'sent': 0, 'responses': 0}
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles')
-            funnel['collected'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
-            funnel['enriched'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue')
-            funnel['generated'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "approved"')
-            funnel['approved'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "sent"')
-            funnel['sent'] = cursor.fetchone()['cnt']
-            
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM conversations')
-            funnel['responses'] = cursor.fetchone()['cnt']
+            from infra.db import get_connection as _pgconn
+            with _pgconn() as _pg:
+                with _pg.cursor() as _cur:
+                    _cur.execute('SELECT COUNT(*) FROM twitter_profiles')
+                    funnel['collected'] = _cur.fetchone()[0]
+                    _cur.execute('SELECT COUNT(*) FROM message_queue')
+                    funnel['generated'] = _cur.fetchone()[0]
+                    _cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'approved'")
+                    funnel['approved'] = _cur.fetchone()[0]
+                    _cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'sent'")
+                    funnel['sent'] = _cur.fetchone()[0]
         except: pass
         
         # System stats
