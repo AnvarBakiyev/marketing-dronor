@@ -715,9 +715,25 @@ def run_m2_enrich(data):
                             anthropic_api_key=ANTHROPIC_API_KEY
                         )
                         tier = result.get('tier', 'D')
+
+                        # Run needs_analyzer to fill identified_needs + topics
+                        from m2_profile_analyzer.needs_analyzer import needs_analyzer
+                        needs_result = needs_analyzer(
+                            profile=profile_dict,
+                            tweets=[],
+                            anthropic_api_key=ANTHROPIC_API_KEY
+                        )
+                        import json as _json
+                        identified_needs = _json.dumps(needs_result.get('identified_needs', []))
+                        topics = _json.dumps(needs_result.get('dronor_use_cases', []))
+                        primary_category = needs_result.get('primary_category', '')
+
                         cur.execute(
-                            "UPDATE twitter_profiles SET tier=%s WHERE id=%s",
-                            (tier, p['id'])
+                            "UPDATE twitter_profiles SET tier=%s,
+                             identified_needs=%s::jsonb,
+                             topics_of_interest=%s::jsonb, category=%s
+                             WHERE id=%s",
+                            (tier, identified_needs, topics, primary_category, p['id'])
                         )
                         classified += 1
                     except Exception as _m2e:
