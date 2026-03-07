@@ -720,15 +720,17 @@ def run_m2_enrich(data):
                             (tier, p['id'])
                         )
                         classified += 1
-                    except Exception:
+                    except Exception as _m2e:
                         errors += 1
+                        import logging; logging.getLogger('m2').error(f'M2 classify error: {_m2e}')
                         continue
 
         return {
             'success': True,
             'message': f'Classified {classified} profiles ({errors} errors).',
             'classified': classified,
-            'errors': errors
+            'errors': errors,
+            'api_key_set': bool(ANTHROPIC_API_KEY)
         }
     except Exception as e:
         return {'success': False, 'error': str(e)}
