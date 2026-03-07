@@ -1438,6 +1438,7 @@ def get_warmup_plans():
     from infra.db import get_connection
     try:
         with get_connection() as conn:
+            import psycopg2.extras
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("""
                     SELECT
