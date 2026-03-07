@@ -464,7 +464,7 @@ def get_queue():
                     " mq.created_at, mq.locked_by, mq.locked_at,"
                     " mq.reviewed_by, mq.reviewed_at,"
                     " tp.username AS target_username,"
-                    " tp.full_name AS target_name,"
+                    " tp.display_name AS target_name,"
                     " tp.tier, ta.username AS sender_username,"
                     " CASE WHEN mq.locked_by IS NOT NULL AND mq.locked_by != %s"
                     " THEN 1 ELSE 0 END AS is_locked_by_other"
@@ -1291,7 +1291,7 @@ def v2_queue():
                         mq.id, mq.status, mq.message_text, mq.send_type,
                         mq.created_at, mq.sent_at, mq.target_tweet_id,
                         tp.username  AS target_username,
-                        tp.full_name AS target_name,
+                        tp.display_name AS target_name,
                         tp.followers_count, tp.tier, tp.bio,
                         ta.username  AS sender_username,
                         sj.id        AS job_id,
@@ -1451,7 +1451,7 @@ def v2_profiles():
                 elif contacted == 'false':
                     conditions.append("(contacted = false OR contacted IS NULL)")
                 if search:
-                    conditions.append("(username ILIKE %s OR full_name ILIKE %s OR bio ILIKE %s)")
+                    conditions.append("(username ILIKE %s OR display_name ILIKE %s OR bio ILIKE %s)")
                     params += [f'%{search}%', f'%{search}%', f'%{search}%']
 
                 where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
@@ -1460,7 +1460,7 @@ def v2_profiles():
                 total = cur.fetchone()[0]
 
                 cur.execute(f"""
-                    SELECT id, username, full_name, bio, followers_count,
+                    SELECT id, username, display_name, bio, followers_count,
                            following_count, tier, contacted, collected_at
                     FROM twitter_profiles
                     {where}
