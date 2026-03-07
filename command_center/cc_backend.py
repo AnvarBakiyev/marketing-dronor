@@ -681,7 +681,9 @@ def run_m2_enrich(data):
         # Get profiles without tier
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                import psycopg2.extras as _extras
+                cur2 = conn.cursor(cursor_factory=_extras.RealDictCursor)
+                cur2.execute("""
                     SELECT id, username, display_name, bio, followers_count,
                            following_count, tweets_count
                     FROM twitter_profiles
@@ -689,7 +691,8 @@ def run_m2_enrich(data):
                     ORDER BY followers_count DESC
                     LIMIT %s
                 """, (batch_size,))
-                profiles = cur.fetchall()
+                profiles = cur2.fetchall()
+                cur2.close()
 
         if not profiles:
             return {'success': True, 'message': 'All profiles already classified.', 'classified': 0}
