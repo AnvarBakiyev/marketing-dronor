@@ -1430,6 +1430,35 @@ def v2_send_jobs():
         return jsonify({'error': str(e)}), 500
 
 
+
+@app.route('/cc/v2/warmup-plans', methods=['GET'])
+@require_auth
+def get_warmup_plans():
+    """Return all twitter_accounts with warmup status."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT
+                        a.id, a.username, a.display_name, a.state, a.warmup_day,
+                        a.warmup_started_at, a.daily_reply_limit, a.daily_like_limit,
+                        a.replies_today, a.likes_today, a.health_score,
+                        a.shadowban_detected, a.captcha_triggered, a.suspended,
+                        a.total_sent, a.total_responses, a.last_action_at,
+                        a.persona_type, a.category_focus
+                    FROM twitter_accounts a
+                    ORDER BY a.state, a.warmup_day DESC
+                """)
+                accounts = [dict(r) for r in cur.fetchall()]
+        # Convert datetimes to strings
+        for a in accounts:
+            for k, v in a.items():
+                if hasattr(v, 'isoformat'):
+                    a[k] = v.isoformat()
+        return jsonify({'accounts': accounts, 'total': len(accounts)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/cc/v2/profiles', methods=['GET'])
 def v2_profiles():
     """Paginated profiles list with filters."""

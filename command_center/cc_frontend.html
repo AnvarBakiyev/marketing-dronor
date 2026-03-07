@@ -1275,9 +1275,10 @@ kbd {
       Send Activity
       <span class="nav-badge" id="nb-sendactivity">—</span>
     </div>
-    <div class="nav-item">
+    <div class="nav-item" onclick="switchTab('warmupplans',this)" id="nav-warmupplans">
       <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 3v4l3 1-1 1.7L7 9.5V4z"/></svg>
       Warmup Plans
+      <span class="nav-badge" id="nb-warmupplans">—</span>
     </div>
     <div class="nav-item admin-only" onclick="switchTab('admin',this)" id="nav-admin">
       <svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1L1 4v4c0 4 3 7 7 8 4-1 7-4 7-8V4L8 1z"/></svg>
@@ -1551,6 +1552,40 @@ kbd {
           </tr></thead>
           <tbody id="sendactivity-tbody"></tbody>
         </table>
+      </div>
+    </div>
+
+
+    <!-- ── WARMUP PLANS TAB ── -->
+    <div class="tab-content" id="tab-warmupplans">
+      <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <h2 style="margin:0;font-size:14px;font-weight:600;color:var(--text1)">WARMUP PLANS</h2>
+          <span id="wp-stats" style="font-size:11px;color:var(--text3)"></span>
+          <button class="run-btn" style="margin-left:auto;background:var(--bg4);color:var(--text2);border:1px solid var(--border)" onclick="loadWarmupPlans()">↻ REFRESH</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="padding:6px 8px;text-align:left;color:var(--text3);font-weight:500">USERNAME</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text3);font-weight:500">STATE</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">DAY</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">HEALTH</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">REPLY LIMIT</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">LIKE LIMIT</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">TODAY REPLIES</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">TODAY LIKES</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text3);font-weight:500">TOTAL SENT</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text3);font-weight:500">STARTED</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text3);font-weight:500">FLAGS</th>
+              </tr>
+            </thead>
+            <tbody id="warmup-tbody">
+              <tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text3)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -2324,6 +2359,7 @@ function switchTab(tab, el) {
   if (tab === 'admin')         loadAdmin();
   if (tab === 'profiles')      loadProfiles(1);
   if (tab === 'sendactivity')  loadSendActivity();
+  if (tab === 'warmupplans')   loadWarmupPlans();
 }
 
 // ── DEMO DATA (offline) ──
@@ -2745,6 +2781,8 @@ let activityPollingInterval = null;
 async function loadSendActivity() {
   const tbody = document.getElementById('sendactivity-tbody');
   if (!tbody) return;
+  const refreshBtn = document.querySelector('#tab-sendactivity .run-btn');
+  if (refreshBtn) { refreshBtn.textContent = '⟳ LOADING...'; refreshBtn.disabled = true; }
   try {
     const jobs = await api('/cc/v2/send-jobs');
     if (!jobs || jobs.error || !Array.isArray(jobs)) {
@@ -2759,6 +2797,7 @@ async function loadSendActivity() {
     const saStats = document.getElementById('sa-stats');
     if (saStats) saStats.textContent = sent + ' sent \u00b7 ' + active + ' in progress \u00b7 ' + failed + ' failed';
 
+    if (refreshBtn) { refreshBtn.textContent = '↻ REFRESH'; refreshBtn.disabled = false; }
     if (!jobs.length) {
       tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text3)">No jobs yet. Approve messages in Queue to create jobs.</td></tr>';
       return;
@@ -2802,8 +2841,10 @@ async function loadSendActivity() {
       rows += '</tr>';
     }
     tbody.innerHTML = rows;
+    if (refreshBtn) { refreshBtn.textContent = '↻ REFRESH'; refreshBtn.disabled = false; }
   } catch(e) {
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:#f87171">Error: ' + e.message + '</td></tr>';
+    if (refreshBtn) { refreshBtn.textContent = '↻ REFRESH'; refreshBtn.disabled = false; }
   }
 }
 
@@ -2817,6 +2858,65 @@ function startActivityPolling() {
   }
   loadSendActivity();
   activityPollingInterval = setInterval(loadSendActivity, 5000);
+}
+
+async function loadWarmupPlans() {
+  const tbody = document.getElementById('warmup-tbody');
+  if (!tbody) return;
+  const btn = document.querySelector('#tab-warmupplans .run-btn');
+  if (btn) { btn.textContent = '⟳ LOADING...'; btn.disabled = true; }
+  try {
+    const r = await api('/cc/v2/warmup-plans');
+    if (!r || r.error) {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#f87171">Error: ' + (r && r.error ? r.error : 'Failed to load') + '</td></tr>';
+      return;
+    }
+    const accounts = r.accounts || [];
+    document.getElementById('nb-warmupplans').textContent = accounts.length;
+    const wpStats = document.getElementById('wp-stats');
+    if (wpStats) {
+      const warming  = accounts.filter(a => a.state === 'warming').length;
+      const active   = accounts.filter(a => a.state === 'active').length;
+      const cooling  = accounts.filter(a => a.state === 'cooling').length;
+      const susp     = accounts.filter(a => a.state === 'suspended').length;
+      wpStats.textContent = active + ' active · ' + warming + ' warming · ' + cooling + ' cooling · ' + susp + ' suspended';
+    }
+    if (!accounts.length) {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text3)">No accounts yet. Add accounts in Admin → Accounts.</td></tr>';
+      return;
+    }
+    var stateColors = { warming:'var(--yellow)', active:'var(--accent)', cooling:'#60a5fa', suspended:'#f87171' };
+    var rows = '';
+    for (var i = 0; i < accounts.length; i++) {
+      var a = accounts[i];
+      var sc = stateColors[a.state] || 'var(--text3)';
+      var health = Math.round((a.health_score || 1) * 100);
+      var healthColor = health >= 80 ? 'var(--accent)' : health >= 50 ? 'var(--yellow)' : '#f87171';
+      var started = a.warmup_started_at ? a.warmup_started_at.slice(0,10) : '—';
+      var flags = [];
+      if (a.shadowban_detected) flags.push('<span style="color:#f87171;font-size:9px">SHADOWBAN</span>');
+      if (a.captcha_triggered)  flags.push('<span style="color:var(--yellow);font-size:9px">CAPTCHA</span>');
+      if (a.suspended)          flags.push('<span style="color:#f87171;font-size:9px">SUSPENDED</span>');
+      rows += '<tr style="border-bottom:1px solid var(--border)">';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px"><a href="https://twitter.com/' + a.username + '" target="_blank" style="color:var(--accent);text-decoration:none">@' + a.username + '</a></td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;font-weight:600;color:' + sc + '">' + (a.state || '—').toUpperCase() + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right">D' + (a.warmup_day || 0) + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right;color:' + healthColor + '">' + health + '%</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right;color:var(--text2)">' + (a.daily_reply_limit || 0) + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right;color:var(--text2)">' + (a.daily_like_limit || 0) + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right">' + (a.replies_today || 0) + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right">' + (a.likes_today || 0) + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;text-align:right;color:var(--text2)">' + (a.total_sent || 0) + '</td>';
+      rows += '<td style="padding:5px 8px;font-family:var(--mono);font-size:10px;color:var(--text3)">' + started + '</td>';
+      rows += '<td style="padding:5px 8px">' + (flags.join(' ') || '<span style="color:var(--text3);font-size:9px">—</span>') + '</td>';
+      rows += '</tr>';
+    }
+    tbody.innerHTML = rows;
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#f87171">Error: ' + e.message + '</td></tr>';
+  } finally {
+    if (btn) { btn.textContent = '↻ REFRESH'; btn.disabled = false; }
+  }
 }
 </script>
 </body>
