@@ -1435,6 +1435,7 @@ def v2_send_jobs():
 @require_auth
 def get_warmup_plans():
     """Return all twitter_accounts with warmup status."""
+    from infra.db import get_connection
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
