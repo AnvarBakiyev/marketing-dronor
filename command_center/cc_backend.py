@@ -1467,7 +1467,7 @@ def v2_profiles():
 
                 cur.execute(f"""
                     SELECT id, username, display_name, bio, followers_count,
-                           following_count, tier, outreach_status AS contacted, collected_at
+                           following_count, tier, (outreach_status = 'contacted') AS contacted, outreach_status, collected_at
                     FROM twitter_profiles
                     {where}
                     ORDER BY followers_count DESC

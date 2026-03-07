@@ -2694,12 +2694,13 @@ async function loadProfiles(page) {
     for (var i = 0; i < r.items.length; i++) {
       var p = r.items[i];
       var tc = tierColors[p.tier] || 'var(--text3)';
-      var contacted_badge = p.contacted
-        ? '<span style="color:var(--accent);font-size:9px">&#10003; SENT</span>'
-        : '<span style="color:var(--text3);font-size:9px">&#8212;</span>';
+      var _status = p.outreach_status || 'pending';
+      var _statusColors = {contacted:'var(--accent)', responded:'#4CAF50', converted:'#8BC34A', opted_out:'var(--red)', pending:'var(--text3)'};
+      var _statusLabels = {contacted:'✓ SENT', responded:'✓ REPLIED', converted:'✓ CONVERTED', opted_out:'✗ OPT-OUT', pending:'—'};
+      var contacted_badge = '<span style="color:' + (_statusColors[_status]||'var(--text3)') + ';font-size:9px">' + (_statusLabels[_status]||_status) + '</span>';
       var bio = ((p.bio || '').slice(0,60)).replace(/</g,'&lt;');
       var bioFull = (p.bio || '').replace(/"/g,'&quot;');
-      var name = (p.full_name || '').replace(/</g,'&lt;').slice(0,25);
+      var name = (p.display_name || '').replace(/</g,'&lt;').slice(0,25);
       var date = p.collected_at ? p.collected_at.slice(0,10) : '\u2014';
       var followers = (p.followers_count || 0).toLocaleString();
       rows += '<tr>';
