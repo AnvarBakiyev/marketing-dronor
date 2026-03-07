@@ -627,6 +627,7 @@ def run_module(module):
         'outreach_sender': run_m5_send,
         'inbox_monitor':   run_m6_responses,
         'thread_scout':    run_m7_analytics,
+        'm7_tweet':        run_m7_analytics,
     }
     
     if module not in module_map:
@@ -645,7 +646,7 @@ def run_m1_collect(data):
     sys.path.insert(0, str(_Path(__file__).parent.parent))
 
     query = data.get('query', '')
-    max_profiles = int(data.get('max_profiles', 100))
+    max_profiles = int(data.get('batch_size', data.get('max_profiles', 100)))
     use_defaults = not query  # if no custom query, run all default queries
 
     try:
