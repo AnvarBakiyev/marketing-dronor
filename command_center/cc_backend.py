@@ -729,10 +729,7 @@ def run_m2_enrich(data):
                         primary_category = needs_result.get('primary_category', '')
 
                         cur.execute(
-                            "UPDATE twitter_profiles SET tier=%s,
-                             identified_needs=%s::jsonb,
-                             topics_of_interest=%s::jsonb, category=%s
-                             WHERE id=%s",
+                            "UPDATE twitter_profiles SET tier=%s, identified_needs=%s::jsonb, topics_of_interest=%s::jsonb, category=%s WHERE id=%s",
                             (tier, identified_needs, topics, primary_category, p['id'])
                         )
                         classified += 1
@@ -959,49 +956,65 @@ def smoke_test():
 
 @app.route('/cc/admin', methods=['GET'])
 def get_admin_data():
-    """Get admin panel data."""
-    db = get_db()
+    """Get admin panel data — pure PostgreSQL."""
+    from infra.db import get_connection
     try:
-        # Operators
-        cursor = db.execute('''
-            SELECT id, name, role, approved_count as approved, sent_count as sent, last_active
-            FROM operators ORDER BY role DESC, name
-        ''')
-        operators = [dict(row) for row in cursor.fetchall()]
-        
-        # Funnel stats - PostgreSQL
-        funnel = {'collected': 0, 'enriched': 0, 'generated': 0, 'approved': 0, 'sent': 0, 'responses': 0}
-        try:
-            from infra.db import get_connection as _pgconn
-            with _pgconn() as _pg:
-                with _pg.cursor() as _cur:
-                    _cur.execute('SELECT COUNT(*) FROM twitter_profiles')
-                    funnel['collected'] = _cur.fetchone()[0]
-                    _cur.execute('SELECT COUNT(*) FROM message_queue')
-                    funnel['generated'] = _cur.fetchone()[0]
-                    _cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'approved'")
-                    funnel['approved'] = _cur.fetchone()[0]
-                    _cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'sent'")
-                    funnel['sent'] = _cur.fetchone()[0]
-        except: pass
-        
-        # System stats
-        stats = {
-            'total_dms': funnel['sent'],
-            'total_responses': funnel['responses'],
-            'response_rate': (funnel['responses'] / funnel['sent'] * 100) if funnel['sent'] > 0 else 0,
-            'total_cost': 0.0,
-            'avg_dms_day': 0.0,
-            'active_days': 0
-        }
-        
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                import psycopg2.extras as _e
+                cur2 = conn.cursor(cursor_factory=_e.RealDictCursor)
+
+                # Operators from PostgreSQL operators table (fallback to empty)
+                try:
+                    cur2.execute('''SELECT id, name, role,
+                        approved_count as approved, sent_count as sent, last_active
+                        FROM operators ORDER BY role DESC, name''' )
+                    operators = [dict(r) for r in cur2.fetchall()]
+                except Exception:
+                    operators = []
+
+                # Funnel from PostgreSQL
+                cur.execute('SELECT COUNT(*) FROM twitter_profiles')
+                collected = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE identified_needs IS NOT NULL AND identified_needs != '[]'::jsonb")
+                enriched = cur.fetchone()[0]
+                cur.execute('SELECT COUNT(*) FROM message_queue')
+                generated = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'approved'")
+                approved = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'sent'")
+                sent = cur.fetchone()[0]
+                cur.execute('SELECT COUNT(*) FROM send_jobs')
+                responses = 0  # placeholder
+
+                funnel = [
+                    {'stage': 'COLLECTED',  'count': collected},
+                    {'stage': 'ENRICHED',   'count': enriched},
+                    {'stage': 'GENERATED',  'count': generated},
+                    {'stage': 'APPROVED',   'count': approved},
+                    {'stage': 'SENT',       'count': sent},
+                ]
+
+                # System info
+                system = {
+                    'uptime': '—',
+                    'db_size': '—',
+                    'active_sessions': len(SESSIONS),
+                    'queue_length': approved,
+                }
+
         return jsonify({
             'operators': operators,
             'funnel': funnel,
-            'stats': stats
+            'system': system,
+            'stats': {
+                'total_dms': sent,
+                'total_responses': responses,
+                'response_rate': 0,
+            }
         })
-    finally:
-        db.close()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/cc/operators', methods=['POST'])
 def add_operator():
