@@ -286,7 +286,7 @@ def dashboard():
                     data['profiles_enriched'] = pgcur.fetchone()[0]
                     pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NULL OR tier = ''")
                     data['profiles_pending'] = pgcur.fetchone()[0]
-                    pgcur.execute('SELECT COUNT(*) FROM twitter_profiles WHERE contacted = true')
+                    pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE outreach_status = 'contacted'")
                     data['profiles_contacted'] = pgcur.fetchone()[0]
         except: pass
         
@@ -1448,9 +1448,9 @@ def v2_profiles():
                     conditions.append("tier = %s")
                     params.append(tier)
                 if contacted == 'true':
-                    conditions.append("contacted = true")
+                    conditions.append("outreach_status = 'contacted'")
                 elif contacted == 'false':
-                    conditions.append("(contacted = false OR contacted IS NULL)")
+                    conditions.append("outreach_status != 'contacted'")
                 if search:
                     conditions.append("(username ILIKE %s OR display_name ILIKE %s OR bio ILIKE %s)")
                     params += [f'%{search}%', f'%{search}%', f'%{search}%']
@@ -1462,7 +1462,7 @@ def v2_profiles():
 
                 cur.execute(f"""
                     SELECT id, username, display_name, bio, followers_count,
-                           following_count, tier, contacted, collected_at
+                           following_count, tier, outreach_status AS contacted, collected_at
                     FROM twitter_profiles
                     {where}
                     ORDER BY followers_count DESC
@@ -1500,7 +1500,7 @@ def v2_stats():
                 queries = {
                     'profiles_total'     : "SELECT COUNT(*) FROM twitter_profiles",
                     'profiles_enriched'  : "SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NOT NULL AND tier != ''",
-                    'profiles_contacted' : "SELECT COUNT(*) FROM twitter_profiles WHERE contacted = true",
+                    'profiles_contacted' : "SELECT COUNT(*) FROM twitter_profiles WHERE outreach_status = 'contacted'",
                     'queue_pending'      : "SELECT COUNT(*) FROM message_queue WHERE status IN ('pending','generated')",
                     'queue_approved'     : "SELECT COUNT(*) FROM message_queue WHERE status = 'approved'",
                     'jobs_queued'        : "SELECT COUNT(*) FROM send_jobs WHERE status = 'queued'",
