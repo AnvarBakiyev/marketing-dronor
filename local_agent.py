@@ -24,9 +24,21 @@ import requests
 from playwright.sync_api import sync_playwright
 
 # ── Config ──────────────────────────────────────────────────────────────────
-DB_URL       = "postgresql://postgres:HztyVVdxZXYcFesSzVeTnNkGpBDyMEVP@mainline.proxy.rlwy.net:39885/railway"
-ADSPOWER_URL = "http://localhost:50325"
-POLL_INTERVAL = 2   # seconds between job polls
+import os
+from pathlib import Path as _Path
+
+# Load .env if present (local development)
+_env_file = _Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"' '))
+
+DB_URL       = os.environ["DATABASE_URL"]  # Required — set in .env or environment
+ADSPOWER_URL = os.environ.get("ADSPOWER_URL", "http://localhost:50325")
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "2"))
 TWITTER_DM_URL    = "https://twitter.com/messages/compose?recipient_id={uid}"
 TWITTER_REPLY_URL = "https://twitter.com/i/web/status/{tweet_id}"
 
@@ -99,6 +111,23 @@ def mark_message_sent(msg_queue_id: int):
                 WHERE id=%s
             """, (msg_queue_id,))
         conn.commit()
+
+# ── Job recovery ─────────────────────────────────────────────────────────────────
+def recover_stale_jobs(machine_id: str, timeout_minutes: int = 10):
+    """Reset jobs stuck in 'claimed' by this machine for too long (agent crash recovery)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE send_jobs
+                SET status='queued', claimed_by=NULL, claimed_at=NULL, operator_id=NULL
+                WHERE status='claimed'
+                  AND claimed_by=%s
+                  AND claimed_at < NOW() - INTERVAL '%s minutes'
+            """, (machine_id, timeout_minutes))
+            count = cur.rowcount
+        conn.commit()
+    if count:
+        print(f"[recovery] Reset {count} stale jobs back to queued", flush=True)
 
 # ── AdsPower ─────────────────────────────────────────────────────────────────
 def open_adspower_profile(profile_id: str) -> str:
@@ -325,9 +354,15 @@ Waiting for queued send jobs... (Ctrl+C to stop)
 
     import threading
     active = []
+    recovery_done = False
 
     while True:
         try:
+            # One-time stale job recovery on startup
+            if not recovery_done:
+                recover_stale_jobs(args.machine_id)
+                recovery_done = True
+
             # Clean up finished threads
             active = [t for t in active if t.is_alive()]
 
