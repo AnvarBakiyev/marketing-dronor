@@ -354,8 +354,8 @@ def add_account():
     username = data.get('username', '').strip().lstrip('@')
     adspower_id = data.get('adspower_id', '').strip()
     
-    if not username or not adspower_id:
-        return jsonify({'success': False, 'error': 'Username and AdsPower ID required'})
+    if not username:
+        return jsonify({'success': False, 'error': 'Username required'})
     
     db = get_db()
     try:
