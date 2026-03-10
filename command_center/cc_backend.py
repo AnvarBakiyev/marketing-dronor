@@ -387,7 +387,7 @@ def add_account():
                                   proxy_country, proxy_city, category_focus)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            username, data.get('display_name'), adspower_id, data.get('serial_number'),
+            username, data.get('display_name'), gologin_profile_id, data.get('serial_number'),
             proxy.get('host'), proxy.get('port'), proxy.get('user'), proxy.get('pass'),
             proxy.get('country'), proxy.get('city'), data.get('category_focus')
         ))
