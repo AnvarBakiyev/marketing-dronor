@@ -352,7 +352,7 @@ def add_account():
     """Add a new Twitter account."""
     data = request.get_json()
     username = data.get('username', '').strip().lstrip('@')
-    adspower_id = data.get('adspower_id', '').strip()
+    gologin_profile_id = data.get('gologin_profile_id', data.get('adspower_id', '')).strip()
     
     if not username:
         return jsonify({'success': False, 'error': 'Username required'})
