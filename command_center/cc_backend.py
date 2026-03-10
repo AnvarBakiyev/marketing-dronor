@@ -930,13 +930,13 @@ def smoke_test():
     except:
         steps.append({'name': 'Project structure', 'ok': False})
     
-    # Test AdsPower connection
+    # Test GoLogin connection
     try:
         import requests
-        r = requests.get('http://localhost:50325/status', timeout=2)
-        steps.append({'name': 'AdsPower connection', 'ok': r.status_code == 200})
+        r = requests.get('http://localhost:36912/browser/v2', timeout=2)
+        steps.append({'name': 'GoLogin connection', 'ok': r.status_code == 200})
     except:
-        steps.append({'name': 'AdsPower connection', 'ok': False})
+        steps.append({'name': 'GoLogin connection', 'ok': False})
     
     # Test modules importable
     try:
