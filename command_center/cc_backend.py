@@ -1,5 +1,5 @@
-"""
-Command Center Backend — Flask Server
+﻿"""
+Command Center Backend вЂ” Flask Server
 
 Provides REST API for Command Center UI:
 - Authentication (operators, PIN-based login)
@@ -33,7 +33,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 app = Flask(__name__, static_folder=str(Path(__file__).parent))
 CORS(app)
 
-# Database — SQLite locally, PostgreSQL on Railway
+# Database вЂ” SQLite locally, PostgreSQL on Railway
 DB_PATH = PROJECT_ROOT / 'twitter_outreach.db'
 DATABASE_URL = os.environ.get('DATABASE_URL')
 SESSIONS = {}  # In-memory sessions (token -> user_info)
@@ -640,7 +640,7 @@ def run_module(module):
         return jsonify({'success': False, 'error': str(e)})
 
 def run_m1_collect(data):
-    """M1: Profile Hunter — collect profiles via TwitterAPI.io."""
+    """M1: Profile Hunter вЂ” collect profiles via TwitterAPI.io."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -668,7 +668,7 @@ def run_m1_collect(data):
         return {'success': False, 'error': str(e)}
 
 def run_m2_enrich(data):
-    """M2: Signal Analyzer — classify profiles into S/A/B/C/D tiers."""
+    """M2: Signal Analyzer вЂ” classify profiles into S/A/B/C/D tiers."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -754,7 +754,7 @@ def run_m2_enrich(data):
         return {'success': False, 'error': str(e)}
 
 def run_m3_generate(data):
-    """M4: Message Crafter — generate outreach messages via Claude API."""
+    """M4: Message Crafter вЂ” generate outreach messages via Claude API."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -781,7 +781,7 @@ def run_m3_generate(data):
         return {'success': False, 'error': str(e)}
 
 def run_m4_warmup(data):
-    """M3: Warmup Engine — manage account warmup & assignments."""
+    """M3: Warmup Engine вЂ” manage account warmup & assignments."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -799,7 +799,7 @@ def run_m4_warmup(data):
         return {'success': False, 'error': str(e)}
 
 def run_m5_send(data):
-    """M5: Outreach Sender — send approved messages via GoLogin antidetect browser."""
+    """M5: Outreach Sender вЂ” send approved messages via GoLogin antidetect browser."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -871,7 +871,7 @@ def run_m5_send(data):
         return {'success': False, 'error': str(e)}
 
 def run_m6_responses(data):
-    """M6: Inbox Monitor — generate follow-ups for unanswered DMs."""
+    """M6: Inbox Monitor вЂ” generate follow-ups for unanswered DMs."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -892,7 +892,7 @@ def run_m6_responses(data):
         return {'success': False, 'error': str(e)}
 
 def run_m7_analytics(data):
-    """M7: Thread Scout — find relevant tweets for outreach context."""
+    """M7: Thread Scout вЂ” find relevant tweets for outreach context."""
     import sys
     from pathlib import Path as _Path
     sys.path.insert(0, str(_Path(__file__).parent.parent))
@@ -961,7 +961,7 @@ def smoke_test():
 
 @app.route('/cc/admin', methods=['GET'])
 def get_admin_data():
-    """Get admin panel data — pure PostgreSQL."""
+    """Get admin panel data вЂ” pure PostgreSQL."""
     from infra.db import get_connection
     try:
         with get_connection() as conn:
@@ -1002,8 +1002,8 @@ def get_admin_data():
 
                 # System info
                 system = {
-                    'uptime': '—',
-                    'db_size': '—',
+                    'uptime': 'вЂ”',
+                    'db_size': 'вЂ”',
                     'active_sessions': len(SESSIONS),
                     'queue_length': approved,
                 }
@@ -1201,7 +1201,7 @@ def delete_proxy(proxy_id):
 @app.route('/cc/proxies/<int:proxy_id>/check', methods=['POST'])
 @require_auth
 def check_proxy(proxy_id):
-    """Test a single proxy — hits httpbin.org/ip through it."""
+    """Test a single proxy вЂ” hits httpbin.org/ip through it."""
     import time, requests as req
     try:
         from infra.db import get_connection
@@ -1276,10 +1276,10 @@ _run_pg_startup_migrations()
 
 if __name__ == '__main__':
     print("\n" + "="*50)
-    print("🎛️  COMMAND CENTER")
+    print("рџЋ›пёЏ  COMMAND CENTER")
     print("="*50)
-    print(f"\n📍 Open in browser: http://localhost:8899")
-    print(f"📁 Database: {DB_PATH}")
+    print(f"\nрџ“Ќ Open in browser: http://localhost:8899")
+    print(f"рџ“Ѓ Database: {DB_PATH}")
     print("\nPress Ctrl+C to stop\n")
     
     
@@ -1292,10 +1292,10 @@ def jslog():
 
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 # POSTGRESQL-BASED ROUTES (message_queue, send_jobs, twitter_profiles)
 # These replace the legacy SQLite dm_queue for new Human-in-the-Loop workflow
-# ═══════════════════════════════════════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 def pg_conn():
     """Get PostgreSQL connection using infra config."""
@@ -1404,7 +1404,7 @@ def v2_approve(msg_id):
             conn.commit()
 
         return jsonify({'success': True, 'job_id': job_id,
-                        'message': f'Job #{job_id} created — waiting for local_agent'})
+                        'message': f'Job #{job_id} created вЂ” waiting for local_agent'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
