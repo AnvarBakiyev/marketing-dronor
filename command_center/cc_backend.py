@@ -38,10 +38,17 @@ DB_PATH = PROJECT_ROOT / 'twitter_outreach.db'
 SESSIONS = {}  # In-memory sessions (token -> user_info)
 
 def get_db():
-    """Get database connection."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Get database connection - PostgreSQL on Railway, SQLite locally."""
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        conn = psycopg2.connect(database_url)
+        return conn
+    else:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        return conn
 
 def hash_pin(pin: str) -> str:
     """Hash PIN for storage."""
@@ -154,7 +161,7 @@ def login():
             return jsonify({'success': False, 'error': 'Invalid credentials'})
         
         # Update last active
-        db.execute('UPDATE operators SET last_active = ? WHERE id = ?',
+        db.execute('UPDATE operators SET last_active = %s WHERE id = %s',
                    (datetime.now().isoformat(), user['id']))
         db.commit()
         
@@ -350,7 +357,7 @@ def delete_account(id):
     """Delete an account."""
     db = get_db()
     try:
-        db.execute('DELETE FROM accounts WHERE id = ?', (id,))
+        db.execute('DELETE FROM accounts WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -507,7 +514,7 @@ def get_conversation_detail(conv_id):
     """Get conversation messages."""
     db = get_db()
     try:
-        cursor = db.execute('SELECT * FROM conversations WHERE id = ?', (conv_id,))
+        cursor = db.execute('SELECT * FROM conversations WHERE id = %s', (conv_id,))
         conv = cursor.fetchone()
         if not conv:
             return jsonify({'error': 'Not found'}), 404
@@ -519,7 +526,7 @@ def get_conversation_detail(conv_id):
         messages = [dict(row) for row in cursor.fetchall()]
         
         # Mark as read
-        db.execute('UPDATE conversations SET unread = 0 WHERE id = ?', (conv_id,))
+        db.execute('UPDATE conversations SET unread = 0 WHERE id = %s', (conv_id,))
         db.commit()
         
         return jsonify({
@@ -551,7 +558,7 @@ def send_reply(conv_id):
     db = get_db()
     try:
         # Get conversation
-        cursor = db.execute('SELECT * FROM conversations WHERE id = ?', (conv_id,))
+        cursor = db.execute('SELECT * FROM conversations WHERE id = %s', (conv_id,))
         conv = cursor.fetchone()
         if not conv:
             return jsonify({'success': False, 'error': 'Conversation not found'})
@@ -992,14 +999,14 @@ def delete_operator(id):
     db = get_db()
     try:
         # Don't delete last admin
-        cursor = db.execute('SELECT role FROM operators WHERE id = ?', (id,))
+        cursor = db.execute('SELECT role FROM operators WHERE id = %s', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
             cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
-        db.execute('DELETE FROM operators WHERE id = ?', (id,))
+        db.execute('DELETE FROM operators WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
