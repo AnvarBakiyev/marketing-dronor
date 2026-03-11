@@ -44,11 +44,22 @@ def get_db():
         import psycopg2
         from psycopg2.extras import RealDictCursor
         conn = psycopg2.connect(database_url)
+        conn.cursor_factory = RealDictCursor
         return conn
     else:
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
         return conn
+
+def db_execute(db, query, params=()):
+    """Execute query on both SQLite and PostgreSQL."""
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        cur = db.cursor()
+        cur.execute(query, params)
+        return cur
+    else:
+        return db_execute(db, query, params)
 
 def hash_pin(pin: str) -> str:
     """Hash PIN for storage."""
@@ -92,12 +103,12 @@ def setup_check():
     """Check if initial admin setup is needed."""
     db = get_db()
     try:
-        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
         row = cursor.fetchone()
         return jsonify({'setup_done': row['cnt'] > 0})
     except:
         # Table might not exist - create it
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS operators (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
@@ -127,11 +138,11 @@ def setup():
     db = get_db()
     try:
         # Check if admin already exists
-        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
         if cursor.fetchone()['cnt'] > 0:
             return jsonify({'success': False, 'error': 'Admin already exists'})
         
-        db.execute(
+        db_execute(db, 
             'INSERT INTO operators (name, pin_hash, role) VALUES (?, ?, ?)',
             (name, hash_pin(pin), 'admin')
         )
@@ -151,7 +162,7 @@ def login():
     
     db = get_db()
     try:
-        cursor = db.execute(
+        cursor = db_execute(db, 
             'SELECT * FROM operators WHERE name = ? AND pin_hash = ?',
             (name, hash_pin(pin))
         )
@@ -161,7 +172,7 @@ def login():
             return jsonify({'success': False, 'error': 'Invalid credentials'})
         
         # Update last active
-        db.execute('UPDATE operators SET last_active = %s WHERE id = %s',
+        db_execute(db, 'UPDATE operators SET last_active = %s WHERE id = %s',
                    (datetime.now().isoformat(), user['id']))
         db.commit()
         
@@ -210,43 +221,43 @@ def dashboard():
         
         # Account stats
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM accounts')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM accounts')
             data['total_accounts'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM accounts WHERE status = "active"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM accounts WHERE status = "active"')
             data['active_accounts'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM accounts WHERE status = "warming"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM accounts WHERE status = "warming"')
             data['warming_accounts'] = cursor.fetchone()['cnt']
         except: pass
         
         # Queue stats
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "pending"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "pending"')
             data['queue_pending'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "in_review"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "in_review"')
             data['queue_in_review'] = cursor.fetchone()['cnt']
         except: pass
         
         # Profile stats
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles')
             data['profiles_total'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
             data['profiles_enriched'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 0')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 0')
             data['profiles_pending'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE contacted = 1')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE contacted = 1')
             data['profiles_contacted'] = cursor.fetchone()['cnt']
         except: pass
         
         # Activity log
         try:
-            cursor = db.execute('''
+            cursor = db_execute(db, '''
                 SELECT type, message, created_at FROM activity_log
                 ORDER BY created_at DESC LIMIT 20
             ''')
@@ -288,7 +299,7 @@ def list_accounts():
     """List all Twitter accounts."""
     db = get_db()
     try:
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             SELECT id, username, display_name, adspower_id, serial_number,
                    status, warmup_pct, dms_sent, health_score, proxy_country,
                    category_focus, created_at
@@ -314,7 +325,7 @@ def add_account():
     db = get_db()
     try:
         # Ensure table exists
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
@@ -335,7 +346,7 @@ def add_account():
         ''')
         
         proxy = data.get('proxy', {})
-        db.execute('''
+        db_execute(db, '''
             INSERT INTO accounts (username, display_name, adspower_id, serial_number,
                                   proxy_host, proxy_port, proxy_user, proxy_pass,
                                   proxy_country, proxy_city, category_focus)
@@ -346,7 +357,7 @@ def add_account():
             proxy.get('country'), proxy.get('city'), data.get('category_focus')
         ))
         db.commit()
-        return jsonify({'success': True, 'id': db.execute('SELECT last_insert_rowid()').fetchone()[0]})
+        return jsonify({'success': True, 'id': db_execute(db, 'SELECT last_insert_rowid()').fetchone()[0]})
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': 'Account already exists'})
     finally:
@@ -357,7 +368,7 @@ def delete_account(id):
     """Delete an account."""
     db = get_db()
     try:
-        db.execute('DELETE FROM accounts WHERE id = %s', (id,))
+        db_execute(db, 'DELETE FROM accounts WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -381,7 +392,7 @@ def bulk_import_accounts():
                 username = parts[0].lstrip('@')
                 adspower_id = parts[1]
                 try:
-                    db.execute('''
+                    db_execute(db, '''
                         INSERT OR IGNORE INTO accounts (username, adspower_id)
                         VALUES (?, ?)
                     ''', (username, adspower_id))
@@ -402,7 +413,7 @@ def get_queue():
     db = get_db()
     try:
         # Ensure table exists
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS dm_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 profile_id INTEGER,
@@ -421,7 +432,7 @@ def get_queue():
         ''')
         db.commit()
         
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             SELECT * FROM dm_queue WHERE status = ?
             ORDER BY created_at DESC LIMIT 100
         ''', (status,))
@@ -436,18 +447,18 @@ def queue_action(id, action):
     db = get_db()
     try:
         if action == 'approve':
-            db.execute(
+            db_execute(db, 
                 'UPDATE dm_queue SET status = "approved", reviewed_at = ? WHERE id = ?',
                 (datetime.now().isoformat(), id)
             )
         elif action == 'reject':
-            db.execute(
+            db_execute(db, 
                 'UPDATE dm_queue SET status = "rejected", reviewed_at = ? WHERE id = ?',
                 (datetime.now().isoformat(), id)
             )
         elif action == 'send':
             # Mark as ready to send
-            db.execute(
+            db_execute(db, 
                 'UPDATE dm_queue SET status = "ready_to_send" WHERE id = ?',
                 (id,)
             )
@@ -461,7 +472,7 @@ def approve_all():
     """Approve all pending/in_review items."""
     db = get_db()
     try:
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             UPDATE dm_queue SET status = "approved", reviewed_at = ?
             WHERE status IN ("pending", "in_review")
         ''', (datetime.now().isoformat(),))
@@ -478,7 +489,7 @@ def get_responses():
     db = get_db()
     try:
         # Ensure table exists
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 profile_id INTEGER,
@@ -490,7 +501,7 @@ def get_responses():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 conversation_id INTEGER NOT NULL,
@@ -501,7 +512,7 @@ def get_responses():
         ''')
         db.commit()
         
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             SELECT * FROM conversations ORDER BY last_time DESC LIMIT 50
         ''')
         conversations = [dict(row) for row in cursor.fetchall()]
@@ -514,19 +525,19 @@ def get_conversation_detail(conv_id):
     """Get conversation messages."""
     db = get_db()
     try:
-        cursor = db.execute('SELECT * FROM conversations WHERE id = %s', (conv_id,))
+        cursor = db_execute(db, 'SELECT * FROM conversations WHERE id = %s', (conv_id,))
         conv = cursor.fetchone()
         if not conv:
             return jsonify({'error': 'Not found'}), 404
         
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             SELECT direction, text, created_at as time FROM messages
             WHERE conversation_id = ? ORDER BY created_at ASC
         ''', (conv_id,))
         messages = [dict(row) for row in cursor.fetchall()]
         
         # Mark as read
-        db.execute('UPDATE conversations SET unread = 0 WHERE id = %s', (conv_id,))
+        db_execute(db, 'UPDATE conversations SET unread = 0 WHERE id = %s', (conv_id,))
         db.commit()
         
         return jsonify({
@@ -558,19 +569,19 @@ def send_reply(conv_id):
     db = get_db()
     try:
         # Get conversation
-        cursor = db.execute('SELECT * FROM conversations WHERE id = %s', (conv_id,))
+        cursor = db_execute(db, 'SELECT * FROM conversations WHERE id = %s', (conv_id,))
         conv = cursor.fetchone()
         if not conv:
             return jsonify({'success': False, 'error': 'Conversation not found'})
         
         # Add to queue
-        db.execute('''
+        db_execute(db, '''
             INSERT INTO dm_queue (target_username, target_name, message_text, status)
             VALUES (?, ?, ?, 'approved')
         ''', (conv['target_username'], conv['target_name'], text))
         
         # Add to messages
-        db.execute('''
+        db_execute(db, '''
             INSERT INTO messages (conversation_id, direction, text)
             VALUES (?, 'outgoing', ?)
         ''', (conv_id, text))
@@ -877,7 +888,7 @@ def smoke_test():
     # Test database
     try:
         db = get_db()
-        db.execute('SELECT 1')
+        db_execute(db, 'SELECT 1')
         db.close()
         steps.append({'name': 'Database connection', 'ok': True})
     except:
@@ -920,7 +931,7 @@ def get_admin_data():
     db = get_db()
     try:
         # Operators
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             SELECT id, name, role, approved_count as approved, sent_count as sent, last_active
             FROM operators ORDER BY role DESC, name
         ''')
@@ -929,22 +940,22 @@ def get_admin_data():
         # Funnel stats
         funnel = {'collected': 0, 'enriched': 0, 'generated': 0, 'approved': 0, 'sent': 0, 'responses': 0}
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles')
             funnel['collected'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
             funnel['enriched'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue')
             funnel['generated'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "approved"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "approved"')
             funnel['approved'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "sent"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "sent"')
             funnel['sent'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM conversations')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM conversations')
             funnel['responses'] = cursor.fetchone()['cnt']
         except: pass
         
@@ -982,7 +993,7 @@ def add_operator():
     
     db = get_db()
     try:
-        db.execute(
+        db_execute(db, 
             'INSERT INTO operators (name, pin_hash, role) VALUES (?, ?, ?)',
             (name, hash_pin(pin), role)
         )
@@ -999,14 +1010,14 @@ def delete_operator(id):
     db = get_db()
     try:
         # Don't delete last admin
-        cursor = db.execute('SELECT role FROM operators WHERE id = %s', (id,))
+        cursor = db_execute(db, 'SELECT role FROM operators WHERE id = %s', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
-        db.execute('DELETE FROM operators WHERE id = %s', (id,))
+        db_execute(db, 'DELETE FROM operators WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -1034,7 +1045,7 @@ def log_activity(activity_type: str, message: str):
     """Log an activity."""
     db = get_db()
     try:
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS activity_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 type TEXT NOT NULL,
@@ -1042,7 +1053,7 @@ def log_activity(activity_type: str, message: str):
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        db.execute(
+        db_execute(db, 
             'INSERT INTO activity_log (type, message) VALUES (?, ?)',
             (activity_type, message)
         )
