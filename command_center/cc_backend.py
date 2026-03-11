@@ -680,10 +680,15 @@ def run_m2_enrich(data):
         batch_size = int(data.get('batch_size', 20))
         # Get profiles without tier
         with get_connection() as conn:
+<<<<<<< Updated upstream
             with conn.cursor() as cur:
                 import psycopg2.extras as _extras
                 cur2 = conn.cursor(cursor_factory=_extras.RealDictCursor)
                 cur2.execute("""
+=======
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+>>>>>>> Stashed changes
                     SELECT id, username, display_name, bio, followers_count,
                            following_count, tweets_count
                     FROM twitter_profiles
