@@ -307,6 +307,25 @@ def get_profiles():
         return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
 
 
+
+@app.route('/cc/v2/profiles', methods=['GET'])
+@require_auth
+def get_profiles_v2():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    db = get_db()
+    try:
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM gologin_profiles')
+        total = cursor.fetchone()['cnt']
+        offset = (page - 1) * per_page
+        cursor = db_execute(db, 'SELECT * FROM gologin_profiles ORDER BY created_at DESC LIMIT %s OFFSET %s', (per_page, offset))
+        profiles = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'profiles': profiles, 'total': total, 'page': page, 'per_page': per_page})
+    except Exception as e:
+        return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
+    finally:
+        db.close()
+
 @app.route('/cc/v2/warmup-plans', methods=['GET'])
 @require_auth
 def get_warmup_plans():
