@@ -306,6 +306,44 @@ def get_profiles():
     except Exception as e:
         return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
 
+
+@app.route('/cc/v2/warmup-plans', methods=['GET'])
+@require_auth
+def get_warmup_plans():
+    """Get warmup plans for accounts."""
+    db = get_db()
+    try:
+        cursor = db_execute(db, '''
+            SELECT id, username, status, warmup_pct, health_score, created_at
+            FROM twitter_accounts 
+            WHERE warmup_pct < 100
+            ORDER BY created_at DESC
+        ''')
+        plans = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'plans': plans, 'total': len(plans)})
+    except Exception as e:
+        return jsonify({'plans': [], 'total': 0, 'error': str(e)})
+    finally:
+        db.close()
+
+@app.route('/cc/v2/send-jobs', methods=['GET'])
+@require_auth
+def get_send_jobs():
+    """Get send jobs/tasks."""
+    db = get_db()
+    try:
+        cursor = db_execute(db, '''
+            SELECT * FROM dm_queue 
+            ORDER BY created_at DESC 
+            LIMIT 100
+        ''')
+        jobs = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'jobs': jobs, 'total': len(jobs)})
+    except Exception as e:
+        return jsonify({'jobs': [], 'total': 0, 'error': str(e)})
+    finally:
+        db.close()
+
 @app.route('/cc/connections', methods=['GET'])
 def check_connections():
     """Check external service connections."""
