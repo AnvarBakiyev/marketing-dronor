@@ -319,18 +319,64 @@ def jslog():
 @app.route('/cc/v2/profiles', methods=['GET'])
 @require_auth
 def get_profiles_v2():
+    """Get twitter profiles with pagination, search, and filters."""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 50, type=int)
+    search = request.args.get('search', '').strip()
+    tier = request.args.get('tier', '').strip()
+    contacted = request.args.get('contacted', '').strip()
+    
     db = get_db()
     try:
-        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM gologin_profiles')
+        # Build WHERE clause
+        conditions = []
+        params = []
+        
+        if search:
+            conditions.append("(username ILIKE %s OR bio ILIKE %s OR display_name ILIKE %s)")
+            search_pattern = f'%{search}%'
+            params.extend([search_pattern, search_pattern, search_pattern])
+        
+        if tier:
+            conditions.append("tier = %s")
+            params.append(tier)
+        
+        if contacted == 'yes':
+            conditions.append("outreach_status != 'pending'")
+        elif contacted == 'no':
+            conditions.append("(outreach_status IS NULL OR outreach_status = 'pending')")
+        
+        where_clause = ' AND '.join(conditions) if conditions else '1=1'
+        
+        # Count total
+        count_sql = f'SELECT COUNT(*) as cnt FROM twitter_profiles WHERE {where_clause}'
+        cursor = db_execute(db, count_sql, params if params else None)
         total = cursor.fetchone()['cnt']
+        
+        # Calculate pagination
         offset = (page - 1) * per_page
-        cursor = db_execute(db, 'SELECT * FROM gologin_profiles ORDER BY created_at DESC LIMIT %s OFFSET %s', (per_page, offset))
-        profiles = [dict(row) for row in cursor.fetchall()]
-        return jsonify({'profiles': profiles, 'total': total, 'page': page, 'per_page': per_page})
+        pages = (total + per_page - 1) // per_page if total > 0 else 1
+        
+        # Get profiles
+        select_sql = f"""SELECT id, twitter_id, username, display_name, bio, 
+                         followers_count, following_count, tier, outreach_status, 
+                         collected_at, created_at
+                         FROM twitter_profiles 
+                         WHERE {where_clause}
+                         ORDER BY created_at DESC 
+                         LIMIT %s OFFSET %s"""
+        cursor = db_execute(db, select_sql, (params if params else []) + [per_page, offset])
+        items = [dict(row) for row in cursor.fetchall()]
+        
+        return jsonify({
+            'items': items,
+            'total': total,
+            'page': page,
+            'pages': pages,
+            'per_page': per_page
+        })
     except Exception as e:
-        return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
+        return jsonify({'items': [], 'total': 0, 'page': 1, 'pages': 1, 'error': str(e)})
     finally:
         db.close()
 
