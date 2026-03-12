@@ -448,18 +448,18 @@ def queue_action(id, action):
     try:
         if action == 'approve':
             db_execute(db, 
-                'UPDATE dm_queue SET status = 'approved', reviewed_at = %s WHERE id = %s',
+                "UPDATE dm_queue SET status = 'approved', reviewed_at = %s WHERE id = %s",
                 (datetime.now().isoformat(), id)
             )
         elif action == 'reject':
             db_execute(db, 
-                'UPDATE dm_queue SET status = 'rejected', reviewed_at = %s WHERE id = %s',
+                "UPDATE dm_queue SET status = 'rejected', reviewed_at = %s WHERE id = %s",
                 (datetime.now().isoformat(), id)
             )
         elif action == 'send':
             # Mark as ready to send
             db_execute(db, 
-                'UPDATE dm_queue SET status = 'ready_to_send' WHERE id = %s',
+                "UPDATE dm_queue SET status = 'ready_to_send' WHERE id = %s",
                 (id,)
             )
         db.commit()
