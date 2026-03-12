@@ -272,6 +272,39 @@ def dashboard():
     finally:
         db.close()
 
+
+@app.route('/cc/profiles', methods=['GET'])
+@require_auth
+def get_profiles():
+    """Get profiles with pagination."""
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    offset = (page - 1) * per_page
+    
+    try:
+        db = get_db()
+        
+        # Get total count
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles')
+        total = cursor.fetchone()['cnt']
+        
+        # Get profiles with pagination
+        cursor = db_execute(db, 
+            'SELECT * FROM profiles ORDER BY created_at DESC LIMIT %s OFFSET %s',
+            (per_page, offset)
+        )
+        profiles = [dict(row) for row in cursor.fetchall()]
+        
+        return jsonify({
+            'profiles': profiles,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        })
+    except Exception as e:
+        return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
+
 @app.route('/cc/connections', methods=['GET'])
 def check_connections():
     """Check external service connections."""
