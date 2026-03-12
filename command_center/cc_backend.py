@@ -59,7 +59,7 @@ def db_execute(db, query, params=()):
         cur.execute(query, params)
         return cur
     else:
-        return db_execute(db, query, params)
+        return db.execute(query, params)
 
 def hash_pin(pin: str) -> str:
     """Hash PIN for storage."""
@@ -103,14 +103,14 @@ def setup_check():
     """Check if initial admin setup is needed."""
     db = get_db()
     try:
-        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'')
         row = cursor.fetchone()
         return jsonify({'setup_done': row['cnt'] > 0})
     except:
         # Table might not exist - create it
         db_execute(db, '''
             CREATE TABLE IF NOT EXISTS operators (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT UNIQUE NOT NULL,
                 pin_hash TEXT NOT NULL,
                 role TEXT DEFAULT 'operator',
@@ -138,7 +138,7 @@ def setup():
     db = get_db()
     try:
         # Check if admin already exists
-        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'')
         if cursor.fetchone()['cnt'] > 0:
             return jsonify({'success': False, 'error': 'Admin already exists'})
         
@@ -163,7 +163,7 @@ def login():
     db = get_db()
     try:
         cursor = db_execute(db, 
-            'SELECT * FROM operators WHERE name = ? AND pin_hash = ?',
+            'SELECT * FROM operators WHERE name = %s AND pin_hash = %s',
             (name, hash_pin(pin))
         )
         user = cursor.fetchone()
@@ -327,7 +327,7 @@ def add_account():
         # Ensure table exists
         db_execute(db, '''
             CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 display_name TEXT,
                 adspower_id TEXT NOT NULL,
@@ -415,7 +415,7 @@ def get_queue():
         # Ensure table exists
         db_execute(db, '''
             CREATE TABLE IF NOT EXISTS dm_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 profile_id INTEGER,
                 target_username TEXT NOT NULL,
                 target_name TEXT,
@@ -433,7 +433,7 @@ def get_queue():
         db.commit()
         
         cursor = db_execute(db, '''
-            SELECT * FROM dm_queue WHERE status = ?
+            SELECT * FROM dm_queue WHERE status = %s
             ORDER BY created_at DESC LIMIT 100
         ''', (status,))
         items = [dict(row) for row in cursor.fetchall()]
@@ -448,18 +448,18 @@ def queue_action(id, action):
     try:
         if action == 'approve':
             db_execute(db, 
-                'UPDATE dm_queue SET status = "approved", reviewed_at = ? WHERE id = ?',
+                'UPDATE dm_queue SET status = 'approved', reviewed_at = %s WHERE id = %s',
                 (datetime.now().isoformat(), id)
             )
         elif action == 'reject':
             db_execute(db, 
-                'UPDATE dm_queue SET status = "rejected", reviewed_at = ? WHERE id = ?',
+                'UPDATE dm_queue SET status = 'rejected', reviewed_at = %s WHERE id = %s',
                 (datetime.now().isoformat(), id)
             )
         elif action == 'send':
             # Mark as ready to send
             db_execute(db, 
-                'UPDATE dm_queue SET status = "ready_to_send" WHERE id = ?',
+                'UPDATE dm_queue SET status = 'ready_to_send' WHERE id = %s',
                 (id,)
             )
         db.commit()
@@ -473,7 +473,7 @@ def approve_all():
     db = get_db()
     try:
         cursor = db_execute(db, '''
-            UPDATE dm_queue SET status = "approved", reviewed_at = ?
+            UPDATE dm_queue SET status = 'approved', reviewed_at = %s
             WHERE status IN ("pending", "in_review")
         ''', (datetime.now().isoformat(),))
         db.commit()
@@ -491,7 +491,7 @@ def get_responses():
         # Ensure table exists
         db_execute(db, '''
             CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 profile_id INTEGER,
                 target_username TEXT NOT NULL,
                 target_name TEXT,
@@ -503,7 +503,7 @@ def get_responses():
         ''')
         db_execute(db, '''
             CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 conversation_id INTEGER NOT NULL,
                 direction TEXT NOT NULL,
                 text TEXT NOT NULL,
@@ -532,7 +532,7 @@ def get_conversation_detail(conv_id):
         
         cursor = db_execute(db, '''
             SELECT direction, text, created_at as time FROM messages
-            WHERE conversation_id = ? ORDER BY created_at ASC
+            WHERE conversation_id = %s ORDER BY created_at ASC
         ''', (conv_id,))
         messages = [dict(row) for row in cursor.fetchall()]
         
@@ -949,7 +949,7 @@ def get_admin_data():
             cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue')
             funnel['generated'] = cursor.fetchone()['cnt']
             
-            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "approved"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = 'approved'')
             funnel['approved'] = cursor.fetchone()['cnt']
             
             cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "sent"')
@@ -1013,7 +1013,7 @@ def delete_operator(id):
         cursor = db_execute(db, 'SELECT role FROM operators WHERE id = %s', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
-            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = "admin"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'')
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
@@ -1047,7 +1047,7 @@ def log_activity(activity_type: str, message: str):
     try:
         db_execute(db, '''
             CREATE TABLE IF NOT EXISTS activity_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
