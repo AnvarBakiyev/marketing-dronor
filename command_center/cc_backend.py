@@ -274,6 +274,7 @@ def dashboard():
 
 
 @app.route('/cc/profiles', methods=['GET'])
+@app.route('/profiles', methods=['GET'])
 @require_auth
 def get_profiles():
     """Get profiles with pagination."""
