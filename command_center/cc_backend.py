@@ -103,7 +103,7 @@ def setup_check():
     """Check if initial admin setup is needed."""
     db = get_db()
     try:
-        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'')
+        cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'")
         row = cursor.fetchone()
         return jsonify({'setup_done': row['cnt'] > 0})
     except:
@@ -138,7 +138,7 @@ def setup():
     db = get_db()
     try:
         # Check if admin already exists
-        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'')
+        cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'")
         if cursor.fetchone()['cnt'] > 0:
             return jsonify({'success': False, 'error': 'Admin already exists'})
         
@@ -949,7 +949,7 @@ def get_admin_data():
             cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue')
             funnel['generated'] = cursor.fetchone()['cnt']
             
-            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = 'approved'')
+            cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM dm_queue WHERE status = 'approved'")
             funnel['approved'] = cursor.fetchone()['cnt']
             
             cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "sent"')
@@ -1013,7 +1013,7 @@ def delete_operator(id):
         cursor = db_execute(db, 'SELECT role FROM operators WHERE id = %s', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
-            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'')
+            cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'")
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
