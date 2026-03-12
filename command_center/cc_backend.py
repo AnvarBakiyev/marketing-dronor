@@ -308,6 +308,14 @@ def get_profiles():
 
 
 
+
+@app.route('/cc/jslog', methods=['POST'])
+def jslog():
+    """Receive frontend logs."""
+    msg = request.json.get('message', '') if request.json else ''
+    print(f'[JSLOG] {msg}', flush=True)
+    return jsonify({'ok': True})
+
 @app.route('/cc/v2/profiles', methods=['GET'])
 @require_auth
 def get_profiles_v2():
