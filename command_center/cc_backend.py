@@ -550,7 +550,13 @@ def get_responses():
             )
         ''')
         db.commit()
-        
+
+        # Add missing columns if they don't exist
+        try:
+            db_execute(db, "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_time TEXT")
+            db.commit()
+        except: pass
+
         cursor = db_execute(db, '''
             SELECT * FROM conversations ORDER BY last_time DESC LIMIT 50
         ''')
