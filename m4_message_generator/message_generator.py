@@ -1,4 +1,4 @@
-"""
+﻿"""
 MKT-46: message_generator (M4)
 Generates personalized outreach messages based on outreach strategy.
 Supports: DM, Reply (to own tweet), Mention (in popular thread)
@@ -119,7 +119,7 @@ Context:
 - Identified need: {primary_need}
 
 Tone: Casual, helpful, not salesy. Mention their specific need.
-DO NOT mention Dronor directly — just offer help with their problem.
+DO NOT mention Dronor directly вЂ” just offer help with their problem.
 End with a soft question.
 """
     
@@ -158,7 +158,7 @@ def _call_openai(prompt: str) -> str:
         from infra.config import ANTHROPIC_API_KEY
         client = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-3-haiku-20240307",
             max_tokens=150,
             messages=[{"role": "user", "content": prompt}]
         )

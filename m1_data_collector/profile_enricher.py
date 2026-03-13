@@ -1,4 +1,4 @@
-"""
+﻿"""
 MKT-5: profile_enricher
 Uses Claude Haiku to extract structured professional data from bio + tweets.
 Fills: professional_role, industry, tech_stack, topics_of_interest, company_size.
@@ -113,7 +113,7 @@ def profile_enricher(
             )
 
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-3-haiku-20240307",
                 max_tokens=400,
                 messages=[{"role": "user", "content": prompt}]
             )

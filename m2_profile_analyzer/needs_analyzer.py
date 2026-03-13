@@ -1,4 +1,4 @@
-"""
+﻿"""
 Needs Analyzer Expert
 Analyze Twitter profile bio and tweets to identify pain points and map to Dronor categories.
 
@@ -125,7 +125,7 @@ Respond ONLY with valid JSON (no markdown):
                 "anthropic-version": "2023-06-01"
             },
             json={
-                "model": "claude-haiku-4-5-20251001",
+                "model": "claude-3-haiku-20240307",
                 "max_tokens": 800,
                 "messages": [{"role": "user", "content": prompt}]
             },

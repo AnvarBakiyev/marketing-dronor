@@ -33,66 +33,33 @@ sys.path.insert(0, str(PROJECT_ROOT))
 app = Flask(__name__, static_folder=str(Path(__file__).parent))
 CORS(app)
 
-# Database вЂ” SQLite locally, PostgreSQL on Railway
+# Database path
 DB_PATH = PROJECT_ROOT / 'twitter_outreach.db'
-DATABASE_URL = os.environ.get('DATABASE_URL')
 SESSIONS = {}  # In-memory sessions (token -> user_info)
 
-class _PgCursorWrapper:
-    """Wraps psycopg2 cursor to behave like sqlite3 cursor (auto-convert ? to %s)."""
-    def __init__(self, cur):
-        self._cur = cur
-    def execute(self, q, params=None):
-        q = q.replace('?', '%s')
-        if params is None:
-            self._cur.execute(q)
-        else:
-            self._cur.execute(q, params)
-        return self
-    def fetchone(self): return self._cur.fetchone()
-    def fetchall(self): return self._cur.fetchall()
-    def __iter__(self): return iter(self._cur.fetchall())
-    @property
-    def lastrowid(self): return self._cur.fetchone()[0] if self._cur.rowcount else None
-    @property
-    def rowcount(self): return self._cur.rowcount
-
-class _PgConnWrapper:
-    """Wraps psycopg2 connection to behave like sqlite3 connection."""
-    def __init__(self, conn):
-        self._conn = conn
-    def execute(self, q, params=None):
-        cur = _PgCursorWrapper(self._conn.cursor(cursor_factory=__import__('psycopg2.extras', fromlist=['RealDictCursor']).RealDictCursor))
-        cur.execute(q, params)
-        return cur
-    def commit(self): self._conn.commit()
-    def close(self): self._conn.close()
-    def __enter__(self): return self
-    def __exit__(self, *a): 
-        self._conn.commit()
-        self._conn.close()
-
 def get_db():
-    """Get database connection. Uses PostgreSQL on Railway, SQLite locally."""
-    if DATABASE_URL:
+    """Get database connection - PostgreSQL on Railway, SQLite locally."""
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
         import psycopg2
-        import psycopg2.extras
-        url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-        conn = psycopg2.connect(url, connect_timeout=10)
-        return _PgConnWrapper(conn)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+        from psycopg2.extras import RealDictCursor
+        conn = psycopg2.connect(database_url)
+        conn.cursor_factory = RealDictCursor
+        return conn
+    else:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        return conn
 
-def _placeholder():
-    """Return ? for SQLite, %s for PostgreSQL."""
-    return '%s' if DATABASE_URL else '?'
-
-def _adapt_query(q):
-    """Adapt SQLite query to PostgreSQL if needed."""
-    if DATABASE_URL:
-        return q.replace('?', '%s')
-    return q
+def db_execute(db, query, params=()):
+    """Execute query on both SQLite and PostgreSQL."""
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        cur = db.cursor()
+        cur.execute(query, params)
+        return cur
+    else:
+        return db.execute(query, params)
 
 def hash_pin(pin: str) -> str:
     """Hash PIN for storage."""
@@ -136,14 +103,14 @@ def setup_check():
     """Check if initial admin setup is needed."""
     db = get_db()
     try:
-        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
+        cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'")
         row = cursor.fetchone()
         return jsonify({'setup_done': row['cnt'] > 0})
     except:
         # Table might not exist - create it
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS operators (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT UNIQUE NOT NULL,
                 pin_hash TEXT NOT NULL,
                 role TEXT DEFAULT 'operator',
@@ -171,11 +138,11 @@ def setup():
     db = get_db()
     try:
         # Check if admin already exists
-        cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
+        cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'")
         if cursor.fetchone()['cnt'] > 0:
             return jsonify({'success': False, 'error': 'Admin already exists'})
         
-        db.execute(
+        db_execute(db, 
             'INSERT INTO operators (name, pin_hash, role) VALUES (?, ?, ?)',
             (name, hash_pin(pin), 'admin')
         )
@@ -195,8 +162,8 @@ def login():
     
     db = get_db()
     try:
-        cursor = db.execute(
-            'SELECT * FROM operators WHERE name = ? AND pin_hash = ?',
+        cursor = db_execute(db, 
+            'SELECT * FROM operators WHERE name = %s AND pin_hash = %s',
             (name, hash_pin(pin))
         )
         user = cursor.fetchone()
@@ -205,7 +172,7 @@ def login():
             return jsonify({'success': False, 'error': 'Invalid credentials'})
         
         # Update last active
-        db.execute('UPDATE operators SET last_active = %s WHERE id = %s' if DATABASE_URL else 'UPDATE operators SET last_active = ? WHERE id = ?',
+        db_execute(db, 'UPDATE operators SET last_active = %s WHERE id = %s',
                    (datetime.now().isoformat(), user['id']))
         db.commit()
         
@@ -254,45 +221,43 @@ def dashboard():
         
         # Account stats
         try:
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM accounts')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM accounts')
             data['total_accounts'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM accounts WHERE status = "active"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM accounts WHERE status = "active"')
             data['active_accounts'] = cursor.fetchone()['cnt']
             
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM accounts WHERE status = "warming"')
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM accounts WHERE status = "warming"')
             data['warming_accounts'] = cursor.fetchone()['cnt']
         except: pass
         
         # Queue stats
         try:
-            from infra.db import get_connection
-            with get_connection() as pg:
-                with pg.cursor() as cur:
-                    cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'pending'")
-                    data['queue_pending'] = cur.fetchone()[0]
-                    cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'pending'")
-                    data['queue_in_review'] = cur.fetchone()[0]
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "pending"')
+            data['queue_pending'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "in_review"')
+            data['queue_in_review'] = cursor.fetchone()['cnt']
         except: pass
         
-        # Profile stats - PostgreSQL twitter_profiles
+        # Profile stats
         try:
-            from infra.db import get_connection
-            with get_connection() as pg:
-                with pg.cursor() as pgcur:
-                    pgcur.execute('SELECT COUNT(*) FROM twitter_profiles')
-                    data['profiles_total'] = pgcur.fetchone()[0]
-                    pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NOT NULL AND tier != ''")
-                    data['profiles_enriched'] = pgcur.fetchone()[0]
-                    pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NULL OR tier = ''")
-                    data['profiles_pending'] = pgcur.fetchone()[0]
-                    pgcur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE outreach_status = 'contacted'")
-                    data['profiles_contacted'] = pgcur.fetchone()[0]
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles')
+            data['profiles_total'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
+            data['profiles_enriched'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 0')
+            data['profiles_pending'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE contacted = 1')
+            data['profiles_contacted'] = cursor.fetchone()['cnt']
         except: pass
         
         # Activity log
         try:
-            cursor = db.execute('''
+            cursor = db_execute(db, '''
                 SELECT type, message, created_at FROM activity_log
                 ORDER BY created_at DESC LIMIT 20
             ''')
@@ -307,6 +272,105 @@ def dashboard():
     finally:
         db.close()
 
+
+@app.route('/cc/profiles', methods=['GET'])
+@app.route('/profiles', methods=['GET'])
+@require_auth
+def get_profiles():
+    """Get profiles with pagination."""
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    offset = (page - 1) * per_page
+    
+    try:
+        db = get_db()
+        
+        # Get total count
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles')
+        total = cursor.fetchone()['cnt']
+        
+        # Get profiles with pagination
+        cursor = db_execute(db, 
+            'SELECT * FROM profiles ORDER BY created_at DESC LIMIT %s OFFSET %s',
+            (per_page, offset)
+        )
+        profiles = [dict(row) for row in cursor.fetchall()]
+        
+        return jsonify({
+            'profiles': profiles,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        })
+    except Exception as e:
+        return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
+
+
+
+
+@app.route('/cc/jslog', methods=['POST'])
+def jslog():
+    """Receive frontend logs."""
+    msg = request.json.get('message', '') if request.json else ''
+    print(f'[JSLOG] {msg}', flush=True)
+    return jsonify({'ok': True})
+
+@app.route('/cc/v2/profiles', methods=['GET'])
+@require_auth
+def get_profiles_v2():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    db = get_db()
+    try:
+        cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM gologin_profiles')
+        total = cursor.fetchone()['cnt']
+        offset = (page - 1) * per_page
+        cursor = db_execute(db, 'SELECT * FROM gologin_profiles ORDER BY created_at DESC LIMIT %s OFFSET %s', (per_page, offset))
+        profiles = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'profiles': profiles, 'total': total, 'page': page, 'per_page': per_page})
+    except Exception as e:
+        return jsonify({'profiles': [], 'total': 0, 'error': str(e)})
+    finally:
+        db.close()
+
+@app.route('/cc/v2/warmup-plans', methods=['GET'])
+@require_auth
+def get_warmup_plans():
+    """Get warmup plans for accounts."""
+    db = get_db()
+    try:
+        cursor = db_execute(db, '''
+            SELECT id, username, status, warmup_pct, health_score, created_at
+            FROM twitter_accounts 
+            WHERE warmup_pct < 100
+            ORDER BY created_at DESC
+        ''')
+        plans = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'plans': plans, 'total': len(plans)})
+    except Exception as e:
+        return jsonify({'plans': [], 'total': 0, 'error': str(e)})
+    finally:
+        db.close()
+
+@app.route('/cc/v2/send-jobs', methods=['GET'])
+@require_auth
+def get_send_jobs():
+    """Get send jobs/tasks."""
+    db = get_db()
+    try:
+        cursor = db_execute(db, '''
+            SELECT * FROM dm_queue 
+            ORDER BY created_at DESC 
+            LIMIT 100
+        ''')
+        jobs = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'jobs': jobs, 'total': len(jobs)})
+    except Exception as e:
+        return jsonify({'jobs': [], 'total': 0, 'error': str(e)})
+    finally:
+        db.close()
+
 @app.route('/cc/connections', methods=['GET'])
 def check_connections():
     """Check external service connections."""
@@ -314,7 +378,12 @@ def check_connections():
     gologin_ok = False
     try:
         import requests
-        r = requests.get('http://localhost:36912/browser/v2', timeout=2)
+        gologin_token = os.environ.get('GOLOGIN_API', '')
+        if gologin_token:
+            headers = {'Authorization': f'Bearer {gologin_token}'}
+            r = requests.get('https://api.gologin.com/browser/v2', headers=headers, timeout=5)
+        else:
+            r = requests.get('http://localhost:36912/browser/v2', timeout=2)
         gologin_ok = r.status_code == 200
     except: pass
     
@@ -334,7 +403,7 @@ def list_accounts():
     """List all Twitter accounts."""
     db = get_db()
     try:
-        cursor = db.execute('''
+        cursor = db_execute(db, '''
             SELECT id, username, display_name, adspower_id, serial_number,
                    status, warmup_pct, dms_sent, health_score, proxy_country,
                    category_focus, created_at
@@ -352,17 +421,17 @@ def add_account():
     """Add a new Twitter account."""
     data = request.get_json()
     username = data.get('username', '').strip().lstrip('@')
-    gologin_profile_id = data.get('gologin_profile_id', data.get('adspower_id', '')).strip()
+    adspower_id = data.get('adspower_id', '').strip()
     
-    if not username:
-        return jsonify({'success': False, 'error': 'Username required'})
+    if not username or not adspower_id:
+        return jsonify({'success': False, 'error': 'Username and AdsPower ID required'})
     
     db = get_db()
     try:
         # Ensure table exists
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 display_name TEXT,
                 adspower_id TEXT NOT NULL,
@@ -381,18 +450,18 @@ def add_account():
         ''')
         
         proxy = data.get('proxy', {})
-        db.execute('''
+        db_execute(db, '''
             INSERT INTO accounts (username, display_name, adspower_id, serial_number,
                                   proxy_host, proxy_port, proxy_user, proxy_pass,
                                   proxy_country, proxy_city, category_focus)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            username, data.get('display_name'), gologin_profile_id, data.get('serial_number'),
+            username, data.get('display_name'), adspower_id, data.get('serial_number'),
             proxy.get('host'), proxy.get('port'), proxy.get('user'), proxy.get('pass'),
             proxy.get('country'), proxy.get('city'), data.get('category_focus')
         ))
         db.commit()
-        return jsonify({'success': True, 'id': db.execute('SELECT last_insert_rowid()').fetchone()[0]})
+        return jsonify({'success': True, 'id': db_execute(db, 'SELECT last_insert_rowid()').fetchone()[0]})
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': 'Account already exists'})
     finally:
@@ -403,7 +472,7 @@ def delete_account(id):
     """Delete an account."""
     db = get_db()
     try:
-        db.execute('DELETE FROM accounts WHERE id = ?', (id,))
+        db_execute(db, 'DELETE FROM accounts WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -427,7 +496,7 @@ def bulk_import_accounts():
                 username = parts[0].lstrip('@')
                 adspower_id = parts[1]
                 try:
-                    db.execute('''
+                    db_execute(db, '''
                         INSERT OR IGNORE INTO accounts (username, adspower_id)
                         VALUES (?, ?)
                     ''', (username, adspower_id))
@@ -440,166 +509,197 @@ def bulk_import_accounts():
 
 # =========== Queue ===========
 
-# =========== Queue (PostgreSQL) ===========
-
 @app.route('/cc/queue', methods=['GET'])
 def get_queue():
-    """Get message queue items by status - PostgreSQL."""
-    from infra.db import get_connection
+    """Get DM queue items by status."""
     status = request.args.get('status', 'pending')
-    operator = request.args.get('operator', '')
-    status_map = {'pending': 'pending', 'in_review': 'in_review',
-                  'approved': 'approved', 'rejected': 'rejected'}
-    pg_status = status_map.get(status, status)
+    
+    db = get_db()
     try:
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                cur.execute(
-                    "UPDATE message_queue SET locked_by = NULL, locked_at = NULL"
-                    " WHERE locked_at IS NOT NULL"
-                    " AND locked_at < NOW() - INTERVAL '5 minutes'"
-                )
-                cur.execute(
-                    "SELECT mq.id, mq.message_text, mq.status, mq.send_type,"
-                    " mq.created_at, mq.locked_by, mq.locked_at,"
-                    " mq.reviewed_by, mq.reviewed_at,"
-                    " tp.username AS target_username,"
-                    " tp.display_name AS target_name,"
-                    " tp.tier, ta.username AS sender_username,"
-                    " CASE WHEN mq.locked_by IS NOT NULL AND mq.locked_by != %s"
-                    " THEN 1 ELSE 0 END AS is_locked_by_other"
-                    " FROM message_queue mq"
-                    " LEFT JOIN twitter_profiles tp ON tp.id = mq.profile_id"
-                    " LEFT JOIN twitter_accounts ta ON ta.id = mq.account_id"
-                    " WHERE mq.status = %s"
-                    " ORDER BY CASE tp.tier WHEN 'S' THEN 1 WHEN 'A' THEN 2"
-                    " WHEN 'B' THEN 3 ELSE 4 END, mq.created_at DESC LIMIT 100",
-                    (operator, pg_status)
-                )
-                cols = [d[0] for d in cur.description]
-                items = [dict(zip(cols, row)) for row in cur.fetchall()]
+        # Ensure table exists
+        db_execute(db, '''
+            CREATE TABLE IF NOT EXISTS dm_queue (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER,
+                target_username TEXT NOT NULL,
+                target_name TEXT,
+                sender_username TEXT,
+                message_text TEXT NOT NULL,
+                tier TEXT DEFAULT 'B',
+                category TEXT,
+                status TEXT DEFAULT 'pending',
+                reviewed_by TEXT,
+                reviewed_at TEXT,
+                sent_at TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        db.commit()
+        
+        cursor = db_execute(db, '''
+            SELECT * FROM dm_queue WHERE status = %s
+            ORDER BY created_at DESC LIMIT 100
+        ''', (status,))
+        items = [dict(row) for row in cursor.fetchall()]
         return jsonify({'items': items})
-    except Exception as e:
-        log(f"get_queue error: {e}")
-        return jsonify({'items': [], 'error': str(e)}), 500
-
+    finally:
+        db.close()
 
 @app.route('/cc/queue/<id>/<action>', methods=['POST'])
 def queue_action(id, action):
-    """Approve/reject/send queue item - PostgreSQL."""
-    from infra.db import get_connection
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    user = SESSIONS.get(token, {})
-    operator_name = user.get('name', 'unknown')
-    action_map = {
-        'approve': "UPDATE message_queue SET status='approved', reviewed_by=%s, reviewed_at=NOW(), locked_by=NULL, locked_at=NULL WHERE id=%s",
-        'reject':  "UPDATE message_queue SET status='rejected', reviewed_by=%s, reviewed_at=NOW(), locked_by=NULL, locked_at=NULL WHERE id=%s",
-    }
-    if action == 'send':
-        sql, params = "UPDATE message_queue SET status='approved' WHERE id=%s", (id,)
-    elif action in action_map:
-        sql, params = action_map[action], (operator_name, id)
-    else:
-        return jsonify({'success': False, 'error': 'Unknown action'}), 400
+    """Perform action on queue item (approve/reject/send)."""
+    db = get_db()
     try:
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                cur.execute(sql, params)
+        if action == 'approve':
+            db_execute(db, 
+                "UPDATE dm_queue SET status = 'approved', reviewed_at = %s WHERE id = %s",
+                (datetime.now().isoformat(), id)
+            )
+        elif action == 'reject':
+            db_execute(db, 
+                "UPDATE dm_queue SET status = 'rejected', reviewed_at = %s WHERE id = %s",
+                (datetime.now().isoformat(), id)
+            )
+        elif action == 'send':
+            # Mark as ready to send
+            db_execute(db, 
+                "UPDATE dm_queue SET status = 'ready_to_send' WHERE id = %s",
+                (id,)
+            )
+        db.commit()
         return jsonify({'success': True})
-    except Exception as e:
-        log(f"queue_action error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/cc/queue/<id>/lock', methods=['POST'])
-def lock_queue_item(id):
-    """Lock queue item for operator - PostgreSQL."""
-    from infra.db import get_connection
-    data = request.get_json() or {}
-    operator = data.get('operator', '')
-    if not operator:
-        token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        user = SESSIONS.get(token)
-        operator = user['name'] if user else 'unknown'
-    try:
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                cur.execute('SELECT locked_by, locked_at FROM message_queue WHERE id = %s', (id,))
-                row = cur.fetchone()
-                if row and row[0] and row[0] != operator:
-                    if row[1]:
-                        from datetime import datetime as dt
-                        if (dt.now() - row[1].replace(tzinfo=None)).total_seconds() < 300:
-                            return jsonify({'success': False, 'locked_by': row[0]})
-                cur.execute('UPDATE message_queue SET locked_by = %s, locked_at = NOW() WHERE id = %s',
-                            (operator, id))
-        return jsonify({'success': True, 'locked_by': operator})
-    except Exception:
-        return jsonify({'success': True, 'locked_by': operator})
-
-
-@app.route('/cc/queue/<id>/unlock', methods=['POST'])
-def unlock_queue_item(id):
-    """Release lock - PostgreSQL."""
-    from infra.db import get_connection
-    try:
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                cur.execute('UPDATE message_queue SET locked_by = NULL, locked_at = NULL WHERE id = %s', (id,))
-        return jsonify({'success': True})
-    except Exception:
-        return jsonify({'success': True})
-
+    finally:
+        db.close()
 
 @app.route('/cc/queue/approve-all', methods=['POST'])
 def approve_all():
-    """Approve all pending/in_review items - PostgreSQL."""
-    from infra.db import get_connection
+    """Approve all pending/in_review items."""
+    db = get_db()
     try:
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                cur.execute("UPDATE message_queue SET status='approved', reviewed_at=NOW()"
-                            " WHERE status IN ('pending', 'in_review')")
-                count = cur.rowcount
-        return jsonify({'success': True, 'approved': count})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
+        cursor = db_execute(db, '''
+            UPDATE dm_queue SET status = 'approved', reviewed_at = %s
+            WHERE status IN ("pending", "in_review")
+        ''', (datetime.now().isoformat(),))
+        db.commit()
+        return jsonify({'success': True, 'approved': cursor.rowcount})
+    finally:
+        db.close()
 
 # =========== Responses ===========
 
 @app.route('/cc/responses', methods=['GET'])
 def get_responses():
-    """Conversation list - stub until response tracking is implemented."""
-    return jsonify({'conversations': []})
+    """Get conversation list."""
+    db = get_db()
+    try:
+        # Ensure table exists
+        db_execute(db, '''
+            CREATE TABLE IF NOT EXISTS conversations (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER,
+                target_username TEXT NOT NULL,
+                target_name TEXT,
+                unread INTEGER DEFAULT 1,
+                last_message TEXT,
+                last_time TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        db_execute(db, '''
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                conversation_id INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        db.commit()
 
+        # Add missing columns if they don't exist
+        try:
+            db_execute(db, "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_time TEXT")
+            db.commit()
+        except: pass
+
+        cursor = db_execute(db, '''
+            SELECT * FROM conversations ORDER BY last_time DESC LIMIT 50
+        ''')
+        conversations = [dict(row) for row in cursor.fetchall()]
+        return jsonify({'conversations': conversations})
+    finally:
+        db.close()
 
 @app.route('/cc/responses/<conv_id>', methods=['GET'])
 def get_conversation_detail(conv_id):
-    return jsonify({'error': 'Not found'}), 404
-
+    """Get conversation messages."""
+    db = get_db()
+    try:
+        cursor = db_execute(db, 'SELECT * FROM conversations WHERE id = %s', (conv_id,))
+        conv = cursor.fetchone()
+        if not conv:
+            return jsonify({'error': 'Not found'}), 404
+        
+        cursor = db_execute(db, '''
+            SELECT direction, text, created_at as time FROM messages
+            WHERE conversation_id = %s ORDER BY created_at ASC
+        ''', (conv_id,))
+        messages = [dict(row) for row in cursor.fetchall()]
+        
+        # Mark as read
+        db_execute(db, 'UPDATE conversations SET unread = 0 WHERE id = %s', (conv_id,))
+        db.commit()
+        
+        return jsonify({
+            'conversation': {
+                **dict(conv),
+                'messages': messages
+            }
+        })
+    finally:
+        db.close()
 
 @app.route('/cc/responses/<conv_id>/generate', methods=['POST'])
 def generate_reply(conv_id):
-    return jsonify({'reply': "Thanks for reaching out! I'd love to learn more about your needs."})
-
+    """Generate AI reply for conversation."""
+    # TODO: Integrate with Claude
+    return jsonify({
+        'reply': 'Thanks for reaching out! I\'d love to learn more about your needs. Could you tell me a bit more about your current setup?'
+    })
 
 @app.route('/cc/responses/<conv_id>/reply', methods=['POST'])
 def send_reply(conv_id):
-    """Queue a reply - inserts into message_queue (PostgreSQL)."""
-    from infra.db import get_connection
+    """Queue a reply message."""
     data = request.get_json()
-    text = (data.get('text') or '').strip()
+    text = data.get('text', '').strip()
+    
     if not text:
         return jsonify({'success': False, 'error': 'Reply text required'})
+    
+    db = get_db()
     try:
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                cur.execute("INSERT INTO message_queue (message_text, status, send_type, created_at)"
-                            " VALUES (%s, 'approved', 'dm', NOW())", (text,))
+        # Get conversation
+        cursor = db_execute(db, 'SELECT * FROM conversations WHERE id = %s', (conv_id,))
+        conv = cursor.fetchone()
+        if not conv:
+            return jsonify({'success': False, 'error': 'Conversation not found'})
+        
+        # Add to queue
+        db_execute(db, '''
+            INSERT INTO dm_queue (target_username, target_name, message_text, status)
+            VALUES (?, ?, ?, 'approved')
+        ''', (conv['target_username'], conv['target_name'], text))
+        
+        # Add to messages
+        db_execute(db, '''
+            INSERT INTO messages (conversation_id, direction, text)
+            VALUES (?, 'outgoing', ?)
+        ''', (conv_id, text))
+        
+        db.commit()
         return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        db.close()
 
 
 # =========== Module Execution ===========
@@ -627,7 +727,6 @@ def run_module(module):
         'outreach_sender': run_m5_send,
         'inbox_monitor':   run_m6_responses,
         'thread_scout':    run_m7_analytics,
-        'm7_tweet':        run_m7_analytics,
     }
     
     if module not in module_map:
@@ -646,7 +745,7 @@ def run_m1_collect(data):
     sys.path.insert(0, str(_Path(__file__).parent.parent))
 
     query = data.get('query', '')
-    max_profiles = int(data.get('batch_size', data.get('max_profiles', 100)))
+    max_profiles = int(data.get('max_profiles', 100))
     use_defaults = not query  # if no custom query, run all default queries
 
     try:
@@ -680,15 +779,8 @@ def run_m2_enrich(data):
         batch_size = int(data.get('batch_size', 20))
         # Get profiles without tier
         with get_connection() as conn:
-<<<<<<< Updated upstream
             with conn.cursor() as cur:
-                import psycopg2.extras as _extras
-                cur2 = conn.cursor(cursor_factory=_extras.RealDictCursor)
-                cur2.execute("""
-=======
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("""
->>>>>>> Stashed changes
                     SELECT id, username, display_name, bio, followers_count,
                            following_count, tweets_count
                     FROM twitter_profiles
@@ -696,8 +788,7 @@ def run_m2_enrich(data):
                     ORDER BY followers_count DESC
                     LIMIT %s
                 """, (batch_size,))
-                profiles = cur2.fetchall()
-                cur2.close()
+                profiles = cur.fetchall()
 
         if not profiles:
             return {'success': True, 'message': 'All profiles already classified.', 'classified': 0}
@@ -720,35 +811,20 @@ def run_m2_enrich(data):
                             anthropic_api_key=ANTHROPIC_API_KEY
                         )
                         tier = result.get('tier', 'D')
-
-                        # Run needs_analyzer to fill identified_needs + topics
-                        from m2_profile_analyzer.needs_analyzer import needs_analyzer
-                        needs_result = needs_analyzer(
-                            profile=profile_dict,
-                            tweets=[],
-                            anthropic_api_key=ANTHROPIC_API_KEY
-                        )
-                        import json as _json
-                        identified_needs = _json.dumps(needs_result.get('identified_needs', []))
-                        topics = _json.dumps(needs_result.get('dronor_use_cases', []))
-                        primary_category = needs_result.get('primary_category', '')
-
                         cur.execute(
-                            "UPDATE twitter_profiles SET tier=%s, identified_needs=%s::jsonb, topics_of_interest=%s::jsonb, category=%s WHERE id=%s",
-                            (tier, identified_needs, topics, primary_category, p['id'])
+                            "UPDATE twitter_profiles SET tier=%s WHERE id=%s",
+                            (tier, p['id'])
                         )
                         classified += 1
-                    except Exception as _m2e:
+                    except Exception:
                         errors += 1
-                        import logging; logging.getLogger('m2').error(f'M2 classify error: {_m2e}')
                         continue
 
         return {
             'success': True,
             'message': f'Classified {classified} profiles ({errors} errors).',
             'classified': classified,
-            'errors': errors,
-            'api_key_set': bool(ANTHROPIC_API_KEY)
+            'errors': errors
         }
     except Exception as e:
         return {'success': False, 'error': str(e)}
@@ -922,7 +998,7 @@ def smoke_test():
     # Test database
     try:
         db = get_db()
-        db.execute('SELECT 1')
+        db_execute(db, 'SELECT 1')
         db.close()
         steps.append({'name': 'Database connection', 'ok': True})
     except:
@@ -935,13 +1011,13 @@ def smoke_test():
     except:
         steps.append({'name': 'Project structure', 'ok': False})
     
-    # Test GoLogin connection
+    # Test AdsPower connection
     try:
         import requests
-        r = requests.get('http://localhost:36912/browser/v2', timeout=2)
-        steps.append({'name': 'GoLogin connection', 'ok': r.status_code == 200})
+        r = requests.get('http://localhost:50325/status', timeout=2)
+        steps.append({'name': 'AdsPower connection', 'ok': r.status_code == 200})
     except:
-        steps.append({'name': 'GoLogin connection', 'ok': False})
+        steps.append({'name': 'AdsPower connection', 'ok': False})
     
     # Test modules importable
     try:
@@ -961,65 +1037,55 @@ def smoke_test():
 
 @app.route('/cc/admin', methods=['GET'])
 def get_admin_data():
-    """Get admin panel data вЂ” pure PostgreSQL."""
-    from infra.db import get_connection
+    """Get admin panel data."""
+    db = get_db()
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                import psycopg2.extras as _e
-                cur2 = conn.cursor(cursor_factory=_e.RealDictCursor)
-
-                # Operators from PostgreSQL operators table (fallback to empty)
-                try:
-                    cur2.execute('''SELECT id, name, role,
-                        approved_count as approved, sent_count as sent, last_active
-                        FROM operators ORDER BY role DESC, name''' )
-                    operators = [dict(r) for r in cur2.fetchall()]
-                except Exception:
-                    operators = []
-
-                # Funnel from PostgreSQL
-                cur.execute('SELECT COUNT(*) FROM twitter_profiles')
-                collected = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM twitter_profiles WHERE identified_needs IS NOT NULL AND identified_needs != '[]'::jsonb")
-                enriched = cur.fetchone()[0]
-                cur.execute('SELECT COUNT(*) FROM message_queue')
-                generated = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'approved'")
-                approved = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM message_queue WHERE status = 'sent'")
-                sent = cur.fetchone()[0]
-                cur.execute('SELECT COUNT(*) FROM send_jobs')
-                responses = 0  # placeholder
-
-                funnel = [
-                    {'stage': 'COLLECTED',  'count': collected},
-                    {'stage': 'ENRICHED',   'count': enriched},
-                    {'stage': 'GENERATED',  'count': generated},
-                    {'stage': 'APPROVED',   'count': approved},
-                    {'stage': 'SENT',       'count': sent},
-                ]
-
-                # System info
-                system = {
-                    'uptime': 'вЂ”',
-                    'db_size': 'вЂ”',
-                    'active_sessions': len(SESSIONS),
-                    'queue_length': approved,
-                }
-
+        # Operators
+        cursor = db_execute(db, '''
+            SELECT id, name, role, approved_count as approved, sent_count as sent, last_active
+            FROM operators ORDER BY role DESC, name
+        ''')
+        operators = [dict(row) for row in cursor.fetchall()]
+        
+        # Funnel stats
+        funnel = {'collected': 0, 'enriched': 0, 'generated': 0, 'approved': 0, 'sent': 0, 'responses': 0}
+        try:
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles')
+            funnel['collected'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM profiles WHERE enriched = 1')
+            funnel['enriched'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue')
+            funnel['generated'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM dm_queue WHERE status = 'approved'")
+            funnel['approved'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM dm_queue WHERE status = "sent"')
+            funnel['sent'] = cursor.fetchone()['cnt']
+            
+            cursor = db_execute(db, 'SELECT COUNT(*) as cnt FROM conversations')
+            funnel['responses'] = cursor.fetchone()['cnt']
+        except: pass
+        
+        # System stats
+        stats = {
+            'total_dms': funnel['sent'],
+            'total_responses': funnel['responses'],
+            'response_rate': (funnel['responses'] / funnel['sent'] * 100) if funnel['sent'] > 0 else 0,
+            'total_cost': 0.0,
+            'avg_dms_day': 0.0,
+            'active_days': 0
+        }
+        
         return jsonify({
             'operators': operators,
             'funnel': funnel,
-            'system': system,
-            'stats': {
-                'total_dms': sent,
-                'total_responses': responses,
-                'response_rate': 0,
-            }
+            'stats': stats
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 @app.route('/cc/operators', methods=['POST'])
 def add_operator():
@@ -1037,7 +1103,7 @@ def add_operator():
     
     db = get_db()
     try:
-        db.execute(
+        db_execute(db, 
             'INSERT INTO operators (name, pin_hash, role) VALUES (?, ?, ?)',
             (name, hash_pin(pin), role)
         )
@@ -1054,14 +1120,14 @@ def delete_operator(id):
     db = get_db()
     try:
         # Don't delete last admin
-        cursor = db.execute('SELECT role FROM operators WHERE id = ?', (id,))
+        cursor = db_execute(db, 'SELECT role FROM operators WHERE id = %s', (id,))
         user = cursor.fetchone()
         if user and user['role'] == 'admin':
-            cursor = db.execute('SELECT COUNT(*) as cnt FROM operators WHERE role = %s' if DATABASE_URL else 'SELECT COUNT(*) as cnt FROM operators WHERE role = ?', ('admin',))
+            cursor = db_execute(db, "SELECT COUNT(*) as cnt FROM operators WHERE role = 'admin'")
             if cursor.fetchone()['cnt'] <= 1:
                 return jsonify({'success': False, 'error': 'Cannot delete last admin'})
         
-        db.execute('DELETE FROM operators WHERE id = ?', (id,))
+        db_execute(db, 'DELETE FROM operators WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True})
     finally:
@@ -1089,15 +1155,15 @@ def log_activity(activity_type: str, message: str):
     """Log an activity."""
     db = get_db()
     try:
-        db.execute('''
+        db_execute(db, '''
             CREATE TABLE IF NOT EXISTS activity_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        db.execute(
+        db_execute(db, 
             'INSERT INTO activity_log (type, message) VALUES (?, ?)',
             (activity_type, message)
         )
@@ -1252,26 +1318,6 @@ def check_all_proxies():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-# =========== Startup Migrations ===========
-
-def _run_pg_startup_migrations():
-    """Apply idempotent PostgreSQL migrations on startup."""
-    if not DATABASE_URL:
-        return
-    try:
-        from infra.db import get_connection
-        with get_connection() as pg:
-            with pg.cursor() as cur:
-                # 009: lock columns for message_queue
-                cur.execute("ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS locked_by TEXT")
-                cur.execute("ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
-        print("[startup] PG migrations applied OK", flush=True)
-    except Exception as e:
-        print(f"[startup] PG migrations warning: {e}", flush=True)
-
-_run_pg_startup_migrations()
-
 # =========== Main ===========
 
 if __name__ == '__main__':
@@ -1282,312 +1328,5 @@ if __name__ == '__main__':
     print(f"рџ“Ѓ Database: {DB_PATH}")
     print("\nPress Ctrl+C to stop\n")
     
-    
-@app.route('/cc/jslog', methods=['POST'])
-def jslog():
-    data = request.get_json(silent=True) or {}
-    msg = data.get('msg', '')
-    print(f'[JSLOG] {msg}', flush=True)
-    return jsonify({'ok': True})
-
-
-
-# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
-# POSTGRESQL-BASED ROUTES (message_queue, send_jobs, twitter_profiles)
-# These replace the legacy SQLite dm_queue for new Human-in-the-Loop workflow
-# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
-
-def pg_conn():
-    """Get PostgreSQL connection using infra config."""
-    from infra.db import get_connection
-    return get_connection()
-
-
-@app.route('/cc/v2/queue', methods=['GET'])
-def v2_queue():
-    """List message_queue items with pagination. Replaces legacy /cc/queue."""
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if token not in SESSIONS:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    status_filter = request.args.get('status', 'pending')
-    page = max(1, int(request.args.get('page', 1)))
-    per_page = min(100, int(request.args.get('per_page', 50)))
-    offset = (page - 1) * per_page
-
-    try:
-        with pg_conn() as conn:
-            with conn.cursor() as cur:
-                # Total count
-                cur.execute(
-                    "SELECT COUNT(*) FROM message_queue WHERE status = %s",
-                    (status_filter,)
-                )
-                total = cur.fetchone()[0]
-
-                # Items with profile + account info
-                cur.execute("""
-                    SELECT
-                        mq.id, mq.status, mq.message_text, mq.send_type,
-                        mq.created_at, mq.sent_at, mq.target_tweet_id,
-                        tp.username  AS target_username,
-                        tp.display_name AS target_name,
-                        tp.followers_count, tp.tier, tp.bio,
-                        ta.username  AS sender_username,
-                        sj.id        AS job_id,
-                        sj.status    AS job_status,
-                        sj.claimed_by, sj.browser_ready_at
-                    FROM message_queue mq
-                    JOIN twitter_profiles tp ON tp.id = mq.profile_id
-                    JOIN twitter_accounts ta ON ta.id = mq.account_id
-                    LEFT JOIN send_jobs sj ON sj.msg_queue_id = mq.id
-                        AND sj.status NOT IN ('sent', 'failed', 'skipped')
-                    WHERE mq.status = %s
-                    ORDER BY mq.created_at DESC
-                    LIMIT %s OFFSET %s
-                """, (status_filter, per_page, offset))
-
-                cols = [d[0] for d in cur.description]
-                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-
-                # Serialize datetimes
-                for row in rows:
-                    for k, v in row.items():
-                        if hasattr(v, 'isoformat'):
-                            row[k] = v.isoformat()
-
-        return jsonify({
-            'items': rows,
-            'total': total,
-            'page': page,
-            'per_page': per_page,
-            'pages': (total + per_page - 1) // per_page
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/cc/v2/queue/<int:msg_id>/approve', methods=['POST'])
-def v2_approve(msg_id):
-    """Approve message and create send_job for local_agent to pick up."""
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    user = SESSIONS.get(token)
-    if not user:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    try:
-        with pg_conn() as conn:
-            with conn.cursor() as cur:
-                # Check message exists and is pending
-                cur.execute(
-                    "SELECT id, status FROM message_queue WHERE id = %s",
-                    (msg_id,)
-                )
-                row = cur.fetchone()
-                if not row:
-                    return jsonify({'error': 'Not found'}), 404
-                if row[1] not in ('pending', 'generated'):
-                    return jsonify({'error': f'Cannot approve, status={row[1]}'}), 400
-
-                # Update message status
-                cur.execute(
-                    "UPDATE message_queue SET status='approved', reviewed_at=NOW() WHERE id=%s",
-                    (msg_id,)
-                )
-
-                # Create send_job for local_agent
-                cur.execute(
-                    "INSERT INTO send_jobs (msg_queue_id) VALUES (%s) RETURNING id",
-                    (msg_id,)
-                )
-                job_id = cur.fetchone()[0]
-            conn.commit()
-
-        return jsonify({'success': True, 'job_id': job_id,
-                        'message': f'Job #{job_id} created вЂ” waiting for local_agent'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/cc/v2/queue/<int:msg_id>/reject', methods=['POST'])
-def v2_reject(msg_id):
-    """Reject message."""
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if token not in SESSIONS:
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        with pg_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE message_queue SET status='rejected', reviewed_at=NOW() WHERE id=%s",
-                    (msg_id,)
-                )
-            conn.commit()
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/cc/v2/send-jobs', methods=['GET'])
-def v2_send_jobs():
-    """Live activity feed of send_jobs for operator monitoring."""
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if token not in SESSIONS:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    try:
-        with pg_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT
-                        sj.id, sj.status, sj.claimed_by,
-                        sj.claimed_at, sj.browser_ready_at, sj.completed_at,
-                        sj.error_msg, sj.created_at,
-                        mq.message_text, mq.send_type,
-                        tp.username AS target_username, tp.tier,
-                        ta.username AS sender_username
-                    FROM send_jobs sj
-                    JOIN message_queue mq ON mq.id = sj.msg_queue_id
-                    JOIN twitter_profiles tp ON tp.id = mq.profile_id
-                    JOIN twitter_accounts ta ON ta.id = mq.account_id
-                    ORDER BY sj.created_at DESC
-                    LIMIT 100
-                """)
-                cols = [d[0] for d in cur.description]
-                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-                for row in rows:
-                    for k, v in row.items():
-                        if hasattr(v, 'isoformat'):
-                            row[k] = v.isoformat()
-        return jsonify(rows)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-
-@app.route('/cc/v2/warmup-plans', methods=['GET'])
-@require_auth
-def get_warmup_plans():
-    """Return all twitter_accounts with warmup status."""
-    from infra.db import get_connection
-    try:
-        with get_connection() as conn:
-            import psycopg2.extras
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT
-                        a.id, a.username, a.display_name, a.state, a.warmup_day,
-                        a.warmup_started_at, a.daily_reply_limit, a.daily_like_limit,
-                        a.replies_today, a.likes_today, a.health_score,
-                        a.shadowban_detected, a.captcha_triggered, a.suspended,
-                        a.total_sent, a.total_responses, a.last_action_at,
-                        a.persona_type, a.category_focus
-                    FROM twitter_accounts a
-                    ORDER BY a.state, a.warmup_day DESC
-                """)
-                accounts = [dict(r) for r in cur.fetchall()]
-        # Convert datetimes to strings
-        for a in accounts:
-            for k, v in a.items():
-                if hasattr(v, 'isoformat'):
-                    a[k] = v.isoformat()
-        return jsonify({'accounts': accounts, 'total': len(accounts)})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/cc/v2/profiles', methods=['GET'])
-def v2_profiles():
-    """Paginated profiles list with filters."""
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if token not in SESSIONS:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    page = max(1, int(request.args.get('page', 1)))
-    per_page = min(200, int(request.args.get('per_page', 50)))
-    offset = (page - 1) * per_page
-    tier = request.args.get('tier', '')
-    contacted = request.args.get('contacted', '')  # true/false
-    search = request.args.get('search', '')
-
-    try:
-        with pg_conn() as conn:
-            with conn.cursor() as cur:
-                conditions = []
-                params = []
-                if tier:
-                    conditions.append("tier = %s")
-                    params.append(tier)
-                if contacted == 'true':
-                    conditions.append("outreach_status = 'contacted'")
-                elif contacted == 'false':
-                    conditions.append("outreach_status != 'contacted'")
-                if search:
-                    conditions.append("(username ILIKE %s OR display_name ILIKE %s OR bio ILIKE %s)")
-                    params += [f'%{search}%', f'%{search}%', f'%{search}%']
-
-                where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-
-                cur.execute(f"SELECT COUNT(*) FROM twitter_profiles {where}", params)
-                total = cur.fetchone()[0]
-
-                cur.execute(f"""
-                    SELECT id, username, display_name, bio, followers_count,
-                           following_count, tier, (outreach_status = 'contacted') AS contacted, outreach_status, collected_at
-                    FROM twitter_profiles
-                    {where}
-                    ORDER BY followers_count DESC
-                    LIMIT %s OFFSET %s
-                """, params + [per_page, offset])
-
-                cols = [d[0] for d in cur.description]
-                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-                for row in rows:
-                    for k, v in row.items():
-                        if hasattr(v, 'isoformat'):
-                            row[k] = v.isoformat()
-
-        return jsonify({
-            'items': rows,
-            'total': total,
-            'page': page,
-            'per_page': per_page,
-            'pages': (total + per_page - 1) // per_page
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/cc/v2/stats', methods=['GET'])
-def v2_stats():
-    """Real-time stats from PostgreSQL."""
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')  
-    if token not in SESSIONS:
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        with pg_conn() as conn:
-            with conn.cursor() as cur:
-                stats = {}
-                queries = {
-                    'profiles_total'     : "SELECT COUNT(*) FROM twitter_profiles",
-                    'profiles_enriched'  : "SELECT COUNT(*) FROM twitter_profiles WHERE tier IS NOT NULL AND tier != ''",
-                    'profiles_contacted' : "SELECT COUNT(*) FROM twitter_profiles WHERE outreach_status = 'contacted'",
-                    'queue_pending'      : "SELECT COUNT(*) FROM message_queue WHERE status IN ('pending','generated')",
-                    'queue_approved'     : "SELECT COUNT(*) FROM message_queue WHERE status = 'approved'",
-                    'jobs_queued'        : "SELECT COUNT(*) FROM send_jobs WHERE status = 'queued'",
-                    'jobs_in_progress'   : "SELECT COUNT(*) FROM send_jobs WHERE status IN ('claimed','browser_ready')",
-                    'sent_today'         : "SELECT COUNT(*) FROM send_jobs WHERE status='sent' AND completed_at >= NOW() - INTERVAL '24 hours'",
-                    'tier_s'             : "SELECT COUNT(*) FROM twitter_profiles WHERE tier = 'S'",
-                    'tier_a'             : "SELECT COUNT(*) FROM twitter_profiles WHERE tier = 'A'",
-                    'tier_b'             : "SELECT COUNT(*) FROM twitter_profiles WHERE tier = 'B'",
-                }
-                for key, sql in queries.items():
-                    cur.execute(sql)
-                    stats[key] = cur.fetchone()[0]
-        return jsonify(stats)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8899))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=8899, debug=True)
 

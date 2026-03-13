@@ -1,8 +1,17 @@
-"""
-infra/config.py — reads ALL credentials from environment variables.
+"""infra/config.py - reads ALL credentials from environment variables.
 No secrets stored here. Set vars in Railway dashboard or .env locally.
 """
 import os
+from pathlib import Path
+
+# Load .env file if exists (for local development)
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    pass  # python-dotenv not installed, rely on system env vars
 
 # --- Database ---
 # Railway injects DATABASE_URL automatically for Postgres service
@@ -33,3 +42,4 @@ else:
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 TWITTER_BEARER_TOKEN = os.environ.get('TWITTER_BEARER_TOKEN', '')
 TWITTERAPI_IO_KEY = os.environ.get('TWITTERAPI_IO_KEY', '')
+GOLOGIN_API = os.environ.get('GOLOGIN_API', '')
